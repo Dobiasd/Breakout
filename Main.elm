@@ -97,7 +97,7 @@ stepObj : Float -> Moving (Positioned a) -> Moving (Positioned a)
 stepObj t ({x,y,vx,vy} as obj) =
     { obj | x <- x + vx*t, y <- y + vy*t }
 
-near : Float -> Float -> Float -> Bool
+near : number -> number -> number -> Bool
 near k c n = n >= k-c && n <= k+c
 
 within : Ball -> Sized (Positioned a) -> Bool
@@ -123,7 +123,7 @@ goBrickHits brick (ball,bricks) =
   in
     (if hit then speedUp ball' else ball', bricks')
 
-weightedAvg : [Float] -> [Float] -> Float
+weightedAvg : [number] -> [number] -> number
 weightedAvg values weights =
   let
     weightedVals = zipWith (*) values weights
