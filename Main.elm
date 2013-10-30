@@ -55,32 +55,32 @@ type Moving     a = { a | vx:Float, vy:Float }
 type Sized      a = { a | w:Float, h:Float }
 
 type Ball = Moving (Positioned { r:Float })
-makeBall : Float -> Float -> Float -> Float -> Float -> Ball
-makeBall x y vx vy r = {x=x, y=y, vx=vx, vy=vy, r=r }
+ball : Float -> Float -> Float -> Float -> Float -> Ball
+ball x y vx vy r = {x=x, y=y, vx=vx, vy=vy, r=r }
 
 type Player = Sized (Moving (Positioned {}))
-makePlayer : Float -> Float -> Float -> Float -> Float -> Float -> Player
-makePlayer x y vx vy w h = {x=x, y=y, vx=vx, vy=vy, w=w, h=h }
+player : Float -> Float -> Float -> Float -> Float -> Float -> Player
+player x y vx vy w h = {x=x, y=y, vx=vx, vy=vy, w=w, h=h }
 
 type Brick = Sized (Positioned {})
-makeBrick : Float -> Float -> Float -> Float -> Brick
-makeBrick x y w h = {x=x, y=y, w=w, h=h }
+brick : Float -> Float -> Float -> Float -> Brick
+brick x y w h = {x=x, y=y, w=w, h=h }
 
-type Game = { state:State, ball:Ball, player:Player, bricks:[Brick] }
+type Game = { state:State, gameBall:Ball, player:Player, bricks:[Brick] }
 
 brickRow : Float -> [Brick]
 brickRow y =
   let xOff = toFloat (ceiling  (-brickCols / 2)) * brickDistX
-  in map (\x -> makeBrick (brickDistX * x + xOff) y brickWidth brickHeight)
+  in map (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
        [0..brickCols-1]
 
 defaultGame : Game
 defaultGame =
-  { state   = Serve,
-    ball    = makeBall 0 (paddleYPos + ballRadius) 0 0 ballRadius,
-    player  = makePlayer 0 paddleYPos 0 0 paddleWidths paddleHeight,
-    bricks  = map ((*) brickDistY) [0..brickRows-1] |>
-                map brickRow |> concat }
+  { state    = Serve,
+    gameBall = ball 0 (paddleYPos + ballRadius) 0 0 ballRadius,
+    player   = player 0 paddleYPos 0 0 paddleWidths paddleHeight,
+    bricks   = map ((*) brickDistY) [0..brickRows-1] |>
+                 map brickRow |> concat }
 
 
 -- Updates
@@ -140,23 +140,23 @@ stepPlyr t dir p =
                 , vx <- if abs p.vx < 1 then p1.vx else p1.vx }
 
 stepGame : Input -> Game -> Game
-stepGame {space,dir,delta} ({state,ball,player,bricks} as game) =
+stepGame {space,dir,delta} ({state,gameBall,player,bricks} as game) =
   let
-    newBall = makeBall player.x (player.y + player.h/2 + ball.r)
-                   (traction*player.vx) serveSpeed ball.r
-    ballLost = ball.y < -halfHeight
+    newBall = ball player.x (player.y + player.h/2 + gameBall.r)
+                   (traction*player.vx) serveSpeed gameBall.r
+    ballLost = gameBall.y < -halfHeight
     (ball', bricks') = if | state == Serve -> (newBall, bricks)
-                          | otherwise -> stepBall delta ball player bricks
+                          | otherwise -> stepBall delta gameBall player bricks
     nextState = if | state == Serve && space -> Play
                    | state == Play && ballLost -> Serve
                    | isEmpty bricks -> Won
                    | otherwise -> state
   in
     if state == Won && space then defaultGame else
-      { game | state  <- nextState
-             , ball   <- ball'
-             , player <- stepPlyr delta dir player
-             , bricks <- bricks' }
+      { game | state    <- nextState
+             , gameBall <- ball'
+             , player   <- stepPlyr delta dir player
+             , bricks   <- bricks' }
 
 gameState = foldp stepGame defaultGame input
 
@@ -171,10 +171,10 @@ make color obj shape = shape |> filled color
 brickColor b = hsv (brickColorFactor * (b.x + b.y)) 1 1
 
 display : (Int,Int) -> Game -> Element
-display (w,h) {state,ball,player,bricks} =
+display (w,h) {state,gameBall,player,bricks} =
   container w h middle <| collage gameWidth gameHeight <|
     [ rect gameWidth gameHeight |> filled breakoutBlue
-    , circle ball.r |> make lightGray ball
+    , circle gameBall.r |> make lightGray gameBall
     , rect player.w player.h |> make darkGray player
     , toForm (if state == Serve then txt id msg else spacer 1 1)
         |> move (0, msgTextPosY)
