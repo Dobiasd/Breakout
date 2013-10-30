@@ -1,4 +1,3 @@
-Breakout
-========
+# Breakout – [live demo](http://daiw.de/games/breakout)
 
-a clone of the classical game for your browser
+A clone of the classical game for your browser.
