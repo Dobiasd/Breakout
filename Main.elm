@@ -28,7 +28,7 @@ ballRadius = 7
 
 -- view configuration
 
-msg = "SPACE to serve, &larr; and &rarr; to move"
+msg = "SPACE to serve, &larr; and &rarr; to move; or just touch the quadrants"
 congrats = "Congratulations! SPACE to restart"
 breakoutBlue = rgb 60 60 100
 textBlue = rgb 160 160 200
@@ -37,6 +37,7 @@ wonTextHeight = 28
 msgTextPosY = 20 - gameHeight/2
 brickRows = 6
 brickCols = 7
+quadrantCol = rgba 0 0 0 0.4
 
 
 -- Inputs
@@ -232,6 +233,13 @@ make color obj shape = shape |> filled color
 brickColor : Brick -> Color
 brickColor b = hsv (brickColorFactor * (b.x + b.y)) 1 1
 
+displayQuadrants : (Float,Float) -> Form
+displayQuadrants (w,h) =
+    group
+      [ [(0   ,0), (0  ,-h/2)] |> traced (solid quadrantCol)
+      , [(-w/2,0), (w/2,   0)] |> traced (solid quadrantCol)
+      ]
+
 display : (Int,Int) -> Game -> Element
 display (w,h) {state,gameBall,player,bricks} =
   container w h middle <| collage gameWidth gameHeight <|
@@ -243,5 +251,7 @@ display (w,h) {state,gameBall,player,bricks} =
     , toForm (if state == Won then txt (Text.height wonTextHeight)
         congrats else spacer 1 1)
     ] ++ map (\b -> rect b.w b.h |> make (brickColor b) b) bricks
+      ++ if state == Serve then [displayQuadrants (toFloat w, toFloat h)]
+                           else []
 
 main = lift2 display Window.dimensions <| dropRepeats gameState
