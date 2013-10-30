@@ -24,8 +24,11 @@ brickWidth = 50
 brickHeight = 10
 ballRadius = 7
 
+
 -- view configuration
 
+msg = "SPACE to serve, &larr; and &rarr; to move"
+congrats = "Congratulations! SPACE to restart"
 breakoutBlue = rgb 60 60 100
 textBlue = rgb 160 160 200
 brickColorFactor = 0.01
@@ -39,8 +42,10 @@ brickCols = 7
 
 type Input = { space:Bool, dir:Int, delta:Time }
 
+delta : Signal Float
 delta = inSeconds <~ fps framesPerSecond
 
+input : Signal Input
 input = sampleOn delta (Input <~ Keyboard.space
                                ~ lift .x Keyboard.arrows
                                ~ delta)
@@ -54,25 +59,28 @@ type Positioned a = { a | x:Float, y:Float }
 type Moving     a = { a | vx:Float, vy:Float }
 type Sized      a = { a | w:Float, h:Float }
 
+type Box = Sized (Positioned {})
+
+type Brick = Box
 type Ball = Moving (Positioned { r:Float })
+type Player = Sized (Moving (Positioned {}))
+
 ball : Float -> Float -> Float -> Float -> Float -> Ball
 ball x y vx vy r = {x=x, y=y, vx=vx, vy=vy, r=r }
 
-type Player = Sized (Moving (Positioned {}))
 player : Float -> Float -> Float -> Float -> Float -> Float -> Player
 player x y vx vy w h = {x=x, y=y, vx=vx, vy=vy, w=w, h=h }
 
-type Brick = Sized (Positioned {})
 brick : Float -> Float -> Float -> Float -> Brick
 brick x y w h = {x=x, y=y, w=w, h=h }
-
-type Game = { state:State, gameBall:Ball, player:Player, bricks:[Brick] }
 
 brickRow : Float -> [Brick]
 brickRow y =
   let xOff = toFloat (ceiling  (-brickCols / 2)) * brickDistX
   in map (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
        [0..brickCols-1]
+
+type Game = { state:State, gameBall:Ball, player:Player, bricks:[Brick] }
 
 defaultGame : Game
 defaultGame =
@@ -85,11 +93,14 @@ defaultGame =
 
 -- Updates
 
+stepObj : Float -> Moving (Positioned a) -> Moving (Positioned a)
 stepObj t ({x,y,vx,vy} as obj) =
     { obj | x <- x + vx*t, y <- y + vy*t }
 
+near : Float -> Float -> Float -> Bool
 near k c n = n >= k-c && n <= k+c
 
+within : Ball -> Sized (Positioned a) -> Bool
 within ball box = (ball.x |> near box.x (ball.r + box.w / 2))
                && (ball.y |> near box.y (ball.r + box.h / 2))
 
@@ -158,16 +169,19 @@ stepGame {space,dir,delta} ({state,gameBall,player,bricks} as game) =
              , player   <- stepPlyr delta dir player
              , bricks   <- bricks' }
 
+gameState : Signal Game
 gameState = foldp stepGame defaultGame input
 
 
 -- Display
-
+txt : (Text -> Text) -> String -> Element
 txt f = text . f . monospace . Text.color textBlue . toText
-msg = "SPACE to serve, &larr; and &rarr; to move"
-congrats = "Congratulations! SPACE to restart"
+
+make : Color -> Positioned a -> Shape -> Form
 make color obj shape = shape |> filled color
                              |> move (obj.x,obj.y)
+
+brickColor : Brick -> Color
 brickColor b = hsv (brickColorFactor * (b.x + b.y)) 1 1
 
 display : (Int,Int) -> Game -> Element
