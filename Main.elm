@@ -1,6 +1,7 @@
 module Breakout where
 
 import Keyboard
+import Touch
 import Window
 
 
@@ -40,14 +41,61 @@ brickCols = 7
 
 -- Inputs
 
+touchInQuadrant : Int -> (Int,Int) -> Touch.Touch -> Bool
+touchInQuadrant q (w,h) touch =
+  let
+    (centerX,centerY) = (toFloat w / 2, toFloat h / 2)
+    (x,y) = (toFloat touch.x, toFloat touch.y)
+    (xCmp, yCmp) = if | q == 1 -> ((>), (<))
+                      | q == 2 -> ((<), (<))
+                      | q == 3 -> ((<), (>))
+                      | q == 4 -> ((>), (>))
+                      | otherwise -> ((==), (==))
+  in
+    x `xCmp` centerX && y `yCmp` centerY
+
+touchUpperRight : (Int,Int) -> Touch.Touch -> Bool
+touchUpperRight = touchInQuadrant 1
+
+touchUpperLeft : (Int,Int) -> Touch.Touch -> Bool
+touchUpperLeft = touchInQuadrant 2
+
+touchLowerLeft : (Int,Int) -> Touch.Touch -> Bool
+touchLowerLeft = touchInQuadrant 3
+
+touchLowerRight : (Int,Int) -> Touch.Touch -> Bool
+touchLowerRight = touchInQuadrant 4
+
+touchUpper : (Int,Int) -> Touch.Touch -> Bool
+touchUpper (w,h) t = touchUpperLeft (w,h) t || touchUpperRight (w,h) t
+
+spaceSignal : Signal Bool
+spaceSignal =
+  let
+    f space touches (w,h) = space || any (touchUpper (w,h)) touches
+  in
+    lift3 f Keyboard.space Touch.touches Window.dimensions
+
+dirSignal : Signal Int
+dirSignal =
+  let
+    f arrows touches (w,h) =
+      let
+        touchLeft = if any (touchLowerLeft (w,h)) touches then 1 else 0
+        touchRight = if any (touchLowerRight (w,h)) touches then 1 else 0
+      in
+        arrows.x + touchRight - touchLeft
+  in
+    lift3 f Keyboard.arrows Touch.touches Window.dimensions
+
 type Input = { space:Bool, dir:Int, delta:Time }
 
 delta : Signal Float
 delta = inSeconds <~ fps framesPerSecond
 
 input : Signal Input
-input = sampleOn delta (Input <~ Keyboard.space
-                               ~ lift .x Keyboard.arrows
+input = sampleOn delta (Input <~ spaceSignal
+                               ~ dirSignal
                                ~ delta)
 
 
