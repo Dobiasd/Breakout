@@ -1,6 +1,7 @@
 module Breakout where
 
 import Keyboard
+import String
 import Touch
 import Window
 
@@ -24,19 +25,23 @@ brickDistY = 33
 brickWidth = 50
 brickHeight = 10
 ballRadius = 7
-
+startSpareBalls = 2
+brickRows = 6
+brickCols = 7
+pointsPerBrick = 1000
 
 -- view configuration
 
-msg = "SPACE to serve, &larr; and &rarr; to move; or just touch the quadrants"
-congrats = "Congratulations! Serve to restart."
+manualMsg = "SPACE to serve, &larr; and &rarr; to move; or just touch the quadrants"
+wonMsg = "Congratulations! Serve to restart."
+lostMsg = "No luck this time. Serve to restart. ;)"
 breakoutBlue = rgb 60 60 100
 textBlue = rgb 160 160 200
 brickColorFactor = 0.01
-wonTextHeight = 28
-msgTextPosY = 20 - gameHeight/2
-brickRows = 6
-brickCols = 7
+endTextHeight = 24
+msgTextPosY = 20 - halfHeight
+pointsTextPos = (51 - halfWidth, halfHeight - 10)
+spareBallsTextPos = (halfWidth - 57, halfHeight - 10)
 quadrantCol = rgba 0 0 0 0.4
 
 
@@ -52,7 +57,7 @@ touchInQuadrant q (w,h) touch =
                               2 -> (True, (<), (<))
                               3 -> (True, (<), (>))
                               4 -> (True, (>), (>))
-                              otherwise -> (False, (==), (==))
+                              _ -> (False, (==), (==))
   in
     if qExists then Just (x `xCmp` centerX && y `yCmp` centerY) else Nothing
 
@@ -103,7 +108,7 @@ input = sampleOn delta (Input <~ spaceSignal
 
 -- Model
 
-data State = Play | Serve | Won
+data State = Play | Serve | Won | Lost
 
 type Positioned a = { a | x:Float, y:Float }
 type Moving     a = { a | vx:Float, vy:Float }
@@ -130,15 +135,22 @@ brickRow y =
   in map (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
        [0..brickCols-1]
 
-type Game = { state:State, gameBall:Ball, player:Player, bricks:[Brick] }
+type Game = { state:State
+            , gameBall:Ball
+            , player:Player
+            , bricks:[Brick]
+            , spareBalls:Int
+            }
 
 defaultGame : Game
 defaultGame =
-  { state    = Serve,
-    gameBall = ball 0 (paddleYPos + ballRadius) 0 0 ballRadius,
-    player   = player 0 paddleYPos 0 0 paddleWidths paddleHeight,
-    bricks   = map ((*) brickDistY) [0..brickRows-1] |>
-                 map brickRow |> concat }
+  { state      = Serve
+  , gameBall   = ball 0 (paddleYPos + ballRadius) 0 0 ballRadius
+  , player     = player 0 paddleYPos 0 0 paddleWidths paddleHeight
+  , bricks     = map ((*) brickDistY) [0..brickRows-1] |>
+                   map brickRow |> concat
+  , spareBalls = startSpareBalls
+  }
 
 
 -- Updates
@@ -186,8 +198,8 @@ stepBall t ({x,y,vx,vy} as ball) p bricks =
     hitPlayer = (ball `within` p)
     newVx = if hitPlayer then
                weightedAvg [p.vx, vx] [traction, 1-traction] else
-               stepV vx (x < ball.r-halfWidth) (x > halfWidth-ball.r)
-    hitCeiling = (y > halfHeight-ball.r)
+               stepV vx (x < (ball.r-halfWidth)) (x > halfWidth-ball.r)
+    hitCeiling = (y > halfHeight - ball.r)
     ball1 = stepObj t { ball | vx <- newVx ,
                                vy <- stepV vy hitPlayer hitCeiling }
   in
@@ -200,24 +212,38 @@ stepPlyr t dir p =
   in  { p1 | x <- clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x
                 , vx <- if abs p.vx < 1 then p1.vx else p1.vx }
 
+nextState : Bool -> Game -> State
+nextState space ({state,gameBall,player,bricks,spareBalls} as game) =
+  let
+    gameOver = spareBalls == 0 && ballLost && state /= Won
+    ballLost = gameBall.y < -halfHeight
+  in
+    if | state == Serve && space -> Play
+       | gameOver -> Lost
+       | state == Play && ballLost -> Serve
+       | isEmpty bricks -> Won
+       | otherwise -> state
+
 stepGame : Input -> Game -> Game
-stepGame {space,dir,delta} ({state,gameBall,player,bricks} as game) =
+stepGame {space,dir,delta}
+         ({state,gameBall,player,bricks,spareBalls} as game) =
   let
     newBall = ball player.x (player.y + player.h/2 + gameBall.r)
                    (traction*player.vx) serveSpeed gameBall.r
     ballLost = gameBall.y < -halfHeight
-    (ball', bricks') = if | state == Serve -> (newBall, bricks)
-                          | otherwise -> stepBall delta gameBall player bricks
-    nextState = if | state == Serve && space -> Play
-                   | state == Play && ballLost -> Serve
-                   | isEmpty bricks -> Won
-                   | otherwise -> state
+    spareBalls' = if ballLost then max 0 (spareBalls - 1) else spareBalls
+    state' = nextState space game
+    (ball', bricks') = case state of
+                         Serve -> (newBall, bricks)
+                         Lost -> (gameBall, bricks)
+                         _ -> (stepBall delta gameBall player bricks)
   in
-    if state == Won && space then defaultGame else
-      { game | state    <- nextState
-             , gameBall <- ball'
-             , player   <- stepPlyr delta dir player
-             , bricks   <- bricks' }
+    if (state' == Won || state' == Lost) && space then defaultGame else
+      { game | state      <- state'
+             , gameBall   <- ball'
+             , player     <- stepPlyr delta dir player
+             , bricks     <- bricks'
+             , spareBalls <- spareBalls' }
 
 gameState : Signal Game
 gameState = foldp stepGame defaultGame input
@@ -234,25 +260,61 @@ make color obj shape = shape |> filled color
 brickColor : Brick -> Color
 brickColor b = hsv (brickColorFactor * (b.x + b.y)) 1 1
 
-displayQuadrants : (Float,Float) -> Form
-displayQuadrants (w,h) =
-    group
-      [ [(0   ,0), (0  ,-h/2)] |> traced (solid quadrantCol)
-      , [(-w/2,0), (w/2,   0)] |> traced (solid quadrantCol)
-      ]
+displayQuadrants : (Float,Float) -> State -> Form
+displayQuadrants (w,h) state =
+  let
+    grid  = group
+              [ [(0   ,0), (0  ,-h/2)] |> traced (solid quadrantCol)
+              , [(-w/2,0), (w/2,   0)] |> traced (solid quadrantCol)
+              ]
+  in
+    if state == Serve then grid else spacer 0 0 |> toForm
+
+pointsText : Int -> String
+pointsText bricksLeft =
+  let
+    maxBricks = brickRows * brickCols
+    maxPoints = pointsPerBrick * maxBricks
+    points = maxPoints - pointsPerBrick * bricksLeft
+    maxPointsStrLen = String.length <| show maxPoints
+  in
+    "points: " ++ (String.padLeft maxPointsStrLen ' ' <| show points)
 
 display : (Int,Int) -> Game -> Element
-display (w,h) {state,gameBall,player,bricks} =
-  container w h middle <| collage gameWidth gameHeight <|
-    [ rect gameWidth gameHeight |> filled breakoutBlue
-    , circle gameBall.r |> make lightGray gameBall
-    , rect player.w player.h |> make darkGray player
-    , toForm (if state == Serve then txt id msg else spacer 1 1)
-        |> move (0, msgTextPosY)
-    , toForm (if state == Won then txt (Text.height wonTextHeight)
-        congrats else spacer 1 1)
-    ] ++ map (\b -> rect b.w b.h |> make (brickColor b) b) bricks
-      ++ if state == Serve then [displayQuadrants (toFloat w, toFloat h)]
-                           else []
+display (w,h) {state,gameBall,player,bricks,spareBalls} =
+  let
+    pointsMsg = pointsText <| length bricks
+    spareBallsMsg = "spare balls: " ++ show spareBalls
+    noElem = spacer 0 0
+    background = rect gameWidth gameHeight |> filled breakoutBlue
+    ball = circle gameBall.r |> make lightGray gameBall
+    paddle = rect player.w player.h |> make darkGray player
+    serveTextForm = toForm (if state == Serve then txt id manualMsg
+                            else noElem) |> move (0, msgTextPosY)
+    endMsg = case state of
+               Won -> wonMsg
+               Lost -> lostMsg
+               _ -> ""
+    showEndText = state == Won || state == Lost
+    endText = txt (Text.height endTextHeight) (pointsMsg ++ "\n" ++ endMsg)
+    endTextForm = (if showEndText then endText else noElem) |> toForm
+    brickRects = group <| map (\b -> rect b.w b.h |> make (brickColor b) b)
+                            bricks
+    quadrants = displayQuadrants (gameWidth,gameHeight) state
+    pointsTextForm = txt id pointsMsg |> toForm |> move pointsTextPos
+    spareBallsForm = txt id spareBallsMsg |> toForm |> move spareBallsTextPos
+  in
+    container w h middle <| collage gameWidth gameHeight <|
+      [ background
+      , brickRects
+      , paddle
+      , ball
+      , serveTextForm
+      , pointsTextForm
+      , spareBallsForm
+      , endTextForm
+      , quadrants
+      , asText state |> toForm
+      ]
 
 main = lift2 display Window.dimensions <| dropRepeats gameState
