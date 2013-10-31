@@ -32,7 +32,8 @@ pointsPerBrick = 1000
 
 -- view configuration
 
-manualMsg = "SPACE to serve, &larr; and &rarr; to move; or just touch the quadrants"
+manualMsg = "SPACE to serve, &larr; and &rarr; to move;" ++
+            " or just touch the quadrants"
 wonMsg = "Congratulations! Serve to restart."
 lostMsg = "No luck this time. Serve to restart. ;)"
 breakoutBlue = rgb 60 60 100
@@ -272,11 +273,11 @@ displayQuadrants (w,h) state =
   in
     if state == Serve then grid else spacer 0 0 |> toForm
 
-pointsText : Int -> String
-pointsText bricksLeft =
+pointsText : Int -> Int -> String
+pointsText bricksLeft spareBalls =
   let
     maxBricks = brickRows * brickCols
-    maxPoints = pointsPerBrick * maxBricks
+    maxPoints = pointsPerBrick * maxBricks + spareBalls - startSpareBalls
     points = maxPoints - pointsPerBrick * bricksLeft
     maxPointsStrLen = String.length <| show maxPoints
   in
@@ -285,7 +286,7 @@ pointsText bricksLeft =
 display : (Int,Int) -> Game -> Element
 display (w,h) {state,gameBall,player,bricks,spareBalls} =
   let
-    pointsMsg = pointsText <| length bricks
+    pointsMsg = pointsText (length bricks) <| spareBalls
     spareBallsMsg = "spare balls: " ++ show spareBalls
     noElem = spacer 0 0
     background = rect gameWidth gameHeight |> filled breakoutBlue
