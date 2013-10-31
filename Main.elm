@@ -314,7 +314,6 @@ display (w,h) {state,gameBall,player,bricks,spareBalls} =
       , spareBallsForm
       , endTextForm
       , quadrants
-      , asText state |> toForm
       ]
 
 main = lift2 display Window.dimensions <| dropRepeats gameState
