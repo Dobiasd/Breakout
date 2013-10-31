@@ -42,7 +42,7 @@ quadrantCol = rgba 0 0 0 0.4
 
 -- Inputs
 
-touchInQuadrant : Int -> (Int,Int) -> Touch.Touch -> Bool
+touchInQuadrant : Int -> (Int,Int) -> Touch.Touch -> Maybe Bool
 touchInQuadrant q (w,h) touch =
   let
     (centerX,centerY) = (toFloat w / 2, toFloat h / 2)
@@ -54,19 +54,19 @@ touchInQuadrant q (w,h) touch =
                               4 -> (True, (>), (>))
                               otherwise -> (False, (==), (==))
   in
-    if not qExists then False else x `xCmp` centerX && y `yCmp` centerY
+    if qExists then Just (x `xCmp` centerX && y `yCmp` centerY) else Nothing
 
 touchUpperRight : (Int,Int) -> Touch.Touch -> Bool
-touchUpperRight = touchInQuadrant 1
+touchUpperRight = (.) (maybe False id) . touchInQuadrant 1
 
 touchUpperLeft : (Int,Int) -> Touch.Touch -> Bool
-touchUpperLeft = touchInQuadrant 2
+touchUpperLeft = (.) (maybe False id) . touchInQuadrant 2
 
 touchLowerLeft : (Int,Int) -> Touch.Touch -> Bool
-touchLowerLeft = touchInQuadrant 3
+touchLowerLeft = (.) (maybe False id) . touchInQuadrant 3
 
 touchLowerRight : (Int,Int) -> Touch.Touch -> Bool
-touchLowerRight = touchInQuadrant 4
+touchLowerRight = (.) (maybe False id) . touchInQuadrant 4
 
 touchUpper : (Int,Int) -> Touch.Touch -> Bool
 touchUpper (w,h) t = touchUpperLeft (w,h) t || touchUpperRight (w,h) t
