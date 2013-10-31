@@ -47,13 +47,14 @@ touchInQuadrant q (w,h) touch =
   let
     (centerX,centerY) = (toFloat w / 2, toFloat h / 2)
     (x,y) = (toFloat touch.x, toFloat touch.y)
-    (xCmp, yCmp) = if | q == 1 -> ((>), (<))
-                      | q == 2 -> ((<), (<))
-                      | q == 3 -> ((<), (>))
-                      | q == 4 -> ((>), (>))
-                      | otherwise -> ((==), (==))
+    (qExists, xCmp, yCmp) = case q of
+                              1 -> (True, (>), (<))
+                              2 -> (True, (<), (<))
+                              3 -> (True, (<), (>))
+                              4 -> (True, (>), (>))
+                              otherwise -> (False, (==), (==))
   in
-    x `xCmp` centerX && y `yCmp` centerY
+    if qExists then False else x `xCmp` centerX && y `yCmp` centerY
 
 touchUpperRight : (Int,Int) -> Touch.Touch -> Bool
 touchUpperRight = touchInQuadrant 1
