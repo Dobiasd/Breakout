@@ -29,7 +29,7 @@ ballRadius = 7
 -- view configuration
 
 msg = "SPACE to serve, &larr; and &rarr; to move; or just touch the quadrants"
-congrats = "Congratulations! SPACE to restart"
+congrats = "Congratulations! Serve to restart."
 breakoutBlue = rgb 60 60 100
 textBlue = rgb 160 160 200
 brickColorFactor = 0.01
