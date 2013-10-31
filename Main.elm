@@ -209,20 +209,22 @@ stepBall t ({x,y,vx,vy} as ball) p bricks =
 stepPlyr : Time -> Int -> Player -> Player
 stepPlyr t dir p =
   let p1 = stepObj t { p | vx <- p.vx * brake + toFloat dir * paddleSpeed }
-  in  { p1 | x <- clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x
-                , vx <- if abs p.vx < 1 then p1.vx else p1.vx }
+  in  { p1 | x <- clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x }
 
-nextState : Bool -> Game -> State
-nextState space ({state,gameBall,player,bricks,spareBalls} as game) =
+nextState : Bool -> Game -> (State, Int)
+nextState space ({state,gameBall,bricks,spareBalls} as game) =
   let
-    gameOver = spareBalls == 0 && ballLost && state /= Won
     ballLost = gameBall.y < -halfHeight
+    spareBalls' = if state == Play && ballLost then spareBalls - 1 else spareBalls
+    gameOver = spareBalls' == -1 && ballLost && state /= Won
+    state' =  if | state == Serve && space -> Play
+                 | gameOver -> Lost
+                 | state == Play && ballLost -> Serve
+                 | isEmpty bricks -> Won
+                 | otherwise -> state
+
   in
-    if | state == Serve && space -> Play
-       | gameOver -> Lost
-       | state == Play && ballLost -> Serve
-       | isEmpty bricks -> Won
-       | otherwise -> state
+    (state', max 0 spareBalls')
 
 stepGame : Input -> Game -> Game
 stepGame {space,dir,delta}
@@ -230,9 +232,8 @@ stepGame {space,dir,delta}
   let
     newBall = ball player.x (player.y + player.h/2 + gameBall.r)
                    (traction*player.vx) serveSpeed gameBall.r
-    ballLost = gameBall.y < -halfHeight
-    spareBalls' = if ballLost then max 0 (spareBalls - 1) else spareBalls
-    state' = nextState space game
+    ballLost = state == Play && gameBall.y < -halfHeight
+    (state', spareBalls') = nextState space game
     (ball', bricks') = case state of
                          Serve -> (newBall, bricks)
                          Lost -> (gameBall, bricks)
@@ -250,6 +251,7 @@ gameState = foldp stepGame defaultGame input
 
 
 -- Display
+
 txt : (Text -> Text) -> String -> Element
 txt f = text . f . monospace . Text.color textBlue . toText
 
