@@ -54,7 +54,7 @@ touchInQuadrant q (w,h) touch =
                               4 -> (True, (>), (>))
                               otherwise -> (False, (==), (==))
   in
-    if qExists then False else x `xCmp` centerX && y `yCmp` centerY
+    if not qExists then False else x `xCmp` centerX && y `yCmp` centerY
 
 touchUpperRight : (Int,Int) -> Touch.Touch -> Bool
 touchUpperRight = touchInQuadrant 1
