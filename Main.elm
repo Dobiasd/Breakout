@@ -214,8 +214,8 @@ stepPlyr t dir p =
 nextState : Bool -> Game -> (State, Int)
 nextState space ({state,gameBall,bricks,spareBalls} as game) =
   let
-    ballLost = gameBall.y < -halfHeight
-    spareBalls' = if state == Play && ballLost then spareBalls - 1 else spareBalls
+    ballLost = state == Play && gameBall.y - gameBall.r < -halfHeight
+    spareBalls' = if ballLost then spareBalls - 1 else spareBalls
     gameOver = spareBalls' == -1 && ballLost && state /= Won
     state' =  if | state == Serve && space -> Play
                  | gameOver -> Lost
