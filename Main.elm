@@ -40,8 +40,8 @@ textBlue = rgb 160 160 200
 brickColorFactor = 0.01
 endTextHeight = 24
 msgTextPosY = 20 - halfHeight
-pointsTextPos = (51 - halfWidth, halfHeight - 10)
-spareBallsTextPos = (halfWidth - 57, halfHeight - 10)
+pointsTextPos = (64 - halfWidth, halfHeight - 10)
+spareBallsTextPos = (halfWidth - 69, halfHeight - 10)
 quadrantCol = rgba 0 0 0 0.4
 
 
