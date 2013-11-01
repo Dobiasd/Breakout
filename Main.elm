@@ -263,6 +263,9 @@ make color obj shape = shape |> filled color
 brickColor : Brick -> Color
 brickColor b = hsv (brickColorFactor * (b.x + b.y)) 1 1
 
+noForm : Form
+noForm = rect 0 0 |> filled (rgba 0 0 0 0)
+
 displayQuadrants : (Float,Float) -> State -> Form
 displayQuadrants (w,h) state =
   let
@@ -271,7 +274,7 @@ displayQuadrants (w,h) state =
               , [(-w/2,0), (w/2,   0)] |> traced (solid quadrantCol)
               ]
   in
-    if state == Serve then grid else spacer 0 0 |> toForm
+    if state == Serve then grid else noForm
 
 pointsText : Int -> Int -> String
 pointsText bricksLeft spareBalls =
@@ -283,31 +286,31 @@ pointsText bricksLeft spareBalls =
   in
     "points: " ++ (String.padLeft maxPointsStrLen ' ' <| show points)
 
-display : (Int,Int) -> Game -> Element
-display (w,h) {state,gameBall,player,bricks,spareBalls} =
+display : Game -> Form
+display {state,gameBall,player,bricks,spareBalls} =
   let
     pointsMsg = pointsText (length bricks) <| spareBalls
     spareBallsMsg = "spare balls: " ++ show spareBalls
-    noElem = spacer 0 0
     background = rect gameWidth gameHeight |> filled breakoutBlue
     ball = circle gameBall.r |> make lightGray gameBall
     paddle = rect player.w player.h |> make darkGray player
-    serveTextForm = toForm (if state == Serve then txt id manualMsg
-                            else noElem) |> move (0, msgTextPosY)
+    serveTextForm = if state == Serve then txt id manualMsg |> toForm
+                            |> move (0, msgTextPosY)
+                            else noForm
     endMsg = case state of
                Won -> wonMsg
                Lost -> lostMsg
                _ -> ""
     showEndText = state == Won || state == Lost
     endText = txt (Text.height endTextHeight) (pointsMsg ++ "\n" ++ endMsg)
-    endTextForm = (if showEndText then endText else noElem) |> toForm
+    endTextForm = if showEndText then endText |> toForm else noForm
     brickRects = group <| map (\b -> rect b.w b.h |> make (brickColor b) b)
                             bricks
     quadrants = displayQuadrants (gameWidth,gameHeight) state
     pointsTextForm = txt id pointsMsg |> toForm |> move pointsTextPos
     spareBallsForm = txt id spareBallsMsg |> toForm |> move spareBallsTextPos
   in
-    container w h middle <| collage gameWidth gameHeight <|
+    group
       [ background
       , brickRects
       , paddle
@@ -319,4 +322,11 @@ display (w,h) {state,gameBall,player,bricks,spareBalls} =
       , quadrants
       ]
 
-main = lift2 display Window.dimensions <| dropRepeats gameState
+displayFullScreen : (Int,Int) -> Game -> Element
+displayFullScreen (w,h) game =
+  let
+    gameScale = min (toFloat w / gameWidth) (toFloat h / gameHeight)
+  in
+    collage w h [display game |> scale gameScale]
+
+main = lift2 displayFullScreen Window.dimensions <| dropRepeats gameState
