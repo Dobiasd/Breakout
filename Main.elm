@@ -31,6 +31,7 @@ brickCols = 7
 pointsPerBrick = 100
 pointsPerBall = -10
 pointsPerContact = -1
+speedFactor = 1
 
 
 -- view configuration
@@ -102,7 +103,7 @@ dirSignal =
 type Input = { space:Bool, dir:Int, delta:Time }
 
 delta : Signal Float
-delta = inSeconds <~ fps framesPerSecond
+delta = lift (\d -> speedFactor * d) <| inSeconds <~ fps framesPerSecond
 
 input : Signal Input
 input = sampleOn delta (Input <~ spaceSignal
