@@ -28,14 +28,17 @@ ballRadius = 7
 startSpareBalls = 2
 brickRows = 6
 brickCols = 7
-pointsPerBrick = 1000
+pointsPerBrick = 100
+pointsPerBall = -10
+pointsPerContact = -1
+
 
 -- view configuration
 
 manualMsg = "SPACE to serve, &larr; and &rarr; to move;" ++
             " or just touch the quadrants"
 wonMsg = "Congratulations! Serve to restart."
-lostMsg = "No luck this time. Serve to restart. ;)"
+lostMsg = "Serve to restart. ;)"
 breakoutBlue = rgb 60 60 100
 textBlue = rgb 160 160 200
 brickColorFactor = 0.01
@@ -141,6 +144,7 @@ type Game = { state:State
             , player:Player
             , bricks:[Brick]
             , spareBalls:Int
+            , contacts:Int
             }
 
 defaultGame : Game
@@ -151,6 +155,7 @@ defaultGame =
   , bricks     = map ((*) brickDistY) [0..brickRows-1] |>
                    map brickRow |> concat
   , spareBalls = startSpareBalls
+  , contacts   = 0
   }
 
 
@@ -193,10 +198,11 @@ weightedAvg values weights =
   in
     sum weightedVals / sum weights
 
-stepBall : Time -> Ball -> Player -> [Brick] -> (Ball,[Brick])
-stepBall t ({x,y,vx,vy} as ball) p bricks =
+stepBall : Time -> Ball -> Player -> [Brick] -> Int -> ((Ball,[Brick]), Int)
+stepBall t ({x,y,vx,vy} as ball) p bricks contacts =
   let
     hitPlayer = (ball `within` p)
+    contacts' = if hitPlayer then contacts + 1 else contacts
     newVx = if hitPlayer then
                weightedAvg [p.vx, vx] [traction, 1-traction] else
                stepV vx (x < (ball.r-halfWidth)) (x > halfWidth-ball.r)
@@ -204,7 +210,7 @@ stepBall t ({x,y,vx,vy} as ball) p bricks =
     ball1 = stepObj t { ball | vx <- newVx ,
                                vy <- stepV vy hitPlayer hitCeiling }
   in
-    foldr goBrickHits (ball1,[]) bricks
+    (foldr goBrickHits (ball1,[]) bricks, contacts')
 
 
 stepPlyr : Time -> Int -> Player -> Player
@@ -229,23 +235,26 @@ nextState space ({state,gameBall,bricks,spareBalls} as game) =
 
 stepGame : Input -> Game -> Game
 stepGame {space,dir,delta}
-         ({state,gameBall,player,bricks,spareBalls} as game) =
+         ({state,gameBall,player,bricks,spareBalls,contacts} as game) =
   let
-    newBall = ball player.x (player.y + player.h/2 + gameBall.r)
+    newBall = ball player.x (player.y + player.h/2 + gameBall.r + 1)
                    (traction*player.vx) serveSpeed gameBall.r
     ballLost = state == Play && gameBall.y < -halfHeight
     (state', spareBalls') = nextState space game
-    (ball', bricks') = case state of
-                         Serve -> (newBall, bricks)
-                         Lost -> (gameBall, bricks)
-                         _ -> (stepBall delta gameBall player bricks)
+    ((ball', bricks'), contacts') =
+      case state of
+        Serve -> ((newBall, bricks), contacts)
+        Lost -> ((gameBall, bricks), contacts)
+        _ -> (stepBall delta gameBall player bricks contacts)
+    finished = state' == Won || state' == Lost
   in
-    if (state' == Won || state' == Lost) && space then defaultGame else
+    if finished && space then defaultGame else
       { game | state      <- state'
              , gameBall   <- ball'
              , player     <- stepPlyr delta dir player
              , bricks     <- bricks'
-             , spareBalls <- spareBalls' }
+             , spareBalls <- spareBalls'
+             , contacts   <- if finished then contacts else contacts' }
 
 gameState : Signal Game
 gameState = foldp stepGame defaultGame input
@@ -276,20 +285,23 @@ displayQuadrants (w,h) state =
   in
     if state == Serve then grid else noForm
 
-pointsText : Int -> Int -> String
-pointsText bricksLeft spareBalls =
+pointsText : Int -> Int -> Int -> String
+pointsText bricksLeft spareBalls contacts =
   let
     maxBricks = brickRows * brickCols
-    maxPoints = pointsPerBrick * maxBricks + spareBalls - startSpareBalls
-    points = maxPoints - pointsPerBrick * bricksLeft
+    maxPoints = pointsPerBrick * maxBricks
+    bricksGone = maxBricks - bricksLeft
+    points = pointsPerBrick * bricksGone +
+             pointsPerBall * (startSpareBalls - spareBalls) +
+             pointsPerContact * contacts
     maxPointsStrLen = String.length <| show maxPoints
   in
     "points: " ++ (String.padLeft maxPointsStrLen ' ' <| show points)
 
 display : Game -> Form
-display {state,gameBall,player,bricks,spareBalls} =
+display {state,gameBall,player,bricks,spareBalls,contacts} =
   let
-    pointsMsg = pointsText (length bricks) <| spareBalls
+    pointsMsg = pointsText (length bricks) spareBalls contacts
     spareBallsMsg = "spare balls: " ++ show spareBalls
     background = rect gameWidth gameHeight |> filled breakoutBlue
     ball = circle gameBall.r |> make lightGray gameBall
