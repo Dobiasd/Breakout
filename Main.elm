@@ -47,7 +47,7 @@ brickCols = 7
 pointsPerBrick = 100
 pointsPerBall = -10
 pointsPerContact = -1
-speedFactor = 4
+speedFactor = 1
 
 
 -- /--------------------\
