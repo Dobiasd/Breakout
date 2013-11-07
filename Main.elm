@@ -292,7 +292,8 @@ stepPlay {delta} ({gameBall,player,bricks,spareBalls,contacts} as game) =
                 | ballLost -> Serve
                 | isEmpty bricks -> Won
                 | otherwise -> Play
-    ((ball', bricks'), contacts') = (stepBall delta gameBall player bricks contacts)
+    ((ball', bricks'), contacts') =
+      stepBall delta gameBall player bricks contacts
   in
     { game | state      <- state'
            , gameBall   <- ball'
