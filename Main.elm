@@ -47,7 +47,7 @@ brickCols = 7
 pointsPerBrick = 100
 pointsPerBall = -10
 pointsPerContact = -1
-speedFactor = 1
+speedFactor = 4
 
 
 -- /--------------------\
@@ -270,45 +270,50 @@ stepPlayer t dir p =
   let p1 = stepObj t { p | vx <- p.vx * brake + toFloat dir * paddleSpeed }
   in  { p1 | x <- clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x }
 
-{-| Which state falls the game into regarding its current situation? -}
-nextState : Bool -> Game -> (State, Int)
-nextState space ({state,gameBall,bricks,spareBalls} as game) =
-  let
-    ballLost = state == Play && gameBall.y - gameBall.r < -halfHeight
-    spareBalls' = if ballLost then spareBalls - 1 else spareBalls
-    gameOver = spareBalls' == -1 && ballLost && state /= Won
-    state' =  if | state == Serve && space -> Play
-                 | gameOver -> Lost
-                 | state == Play && ballLost -> Serve
-                 | isEmpty bricks -> Won
-                 | otherwise -> state
-
-  in
-    (state', max 0 spareBalls')
-
-{-| Advance the game according to its current conditions and the input. -}
+{-| Update player position and
+dispatch according to the current game state. -}
 stepGame : Input -> Game -> Game
-stepGame {space,dir,delta}
-         ({state,gameBall,player,bricks,spareBalls,contacts} as game) =
+stepGame ({dir,delta} as input) ({state,player} as game) =
+  let
+    func = if | state == Play  -> stepPlay
+              | state == Serve -> stepServe
+              | otherwise      -> stepGameOver
+  in
+    func input { game | player <- stepPlayer delta dir player }
+
+{-| Step game when the ball is bouncing around. -}
+stepPlay : Input -> Game -> Game
+stepPlay {delta} ({gameBall,player,bricks,spareBalls,contacts} as game) =
+  let
+    ballLost = gameBall.y - gameBall.r < -halfHeight
+    gameOver = ballLost && spareBalls == 0
+    spareBalls' = if ballLost then spareBalls - 1 else spareBalls
+    state' = if | gameOver -> Lost
+                | ballLost -> Serve
+                | isEmpty bricks -> Won
+                | otherwise -> Play
+    ((ball', bricks'), contacts') = (stepBall delta gameBall player bricks contacts)
+  in
+    { game | state      <- state'
+           , gameBall   <- ball'
+           , bricks     <- bricks'
+           , spareBalls <- max 0 spareBalls' -- No -1 when game is lost.
+           , contacts   <- contacts' }
+
+{-| Step game when the player needs to serve the ball. -}
+stepServe : Input -> Game -> Game
+stepServe {space} ({player,gameBall} as game) =
   let
     newBall = ball player.x (player.y + player.h/2 + gameBall.r + 1)
                    (traction*player.vx) serveSpeed gameBall.r
-    ballLost = state == Play && gameBall.y < -halfHeight
-    (state', spareBalls') = nextState space game
-    ((ball', bricks'), contacts') =
-      case state of
-        Serve -> ((newBall, bricks), contacts)
-        Lost -> ((gameBall, bricks), contacts)
-        _ -> (stepBall delta gameBall player bricks contacts)
-    finished = state' == Won || state' == Lost
+    state' = if space then Play else Serve
   in
-    if finished && space then defaultGame else
-      { game | state      <- state'
-             , gameBall   <- ball'
-             , player     <- stepPlayer delta dir player
-             , bricks     <- bricks'
-             , spareBalls <- spareBalls'
-             , contacts   <- if finished then contacts else contacts' }
+    { game | state    <- state'
+           , gameBall <- newBall }
+
+{-| Change nothing except the user wants to play again. -}
+stepGameOver : Input -> Game -> Game
+stepGameOver {space} ({state} as game) = if space then defaultGame else game
 
 gameState : Signal Game
 gameState = foldp stepGame defaultGame input
