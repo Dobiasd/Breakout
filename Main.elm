@@ -259,10 +259,10 @@ stepBall t ({x,y,vx,vy} as ball) p bricks contacts =
                weightedAvg [p.vx, vx] [traction, 1-traction] else
                stepV vx (x < (ball.r-halfWidth)) (x > halfWidth-ball.r)
     hitCeiling = (y > halfHeight - ball.r)
-    ball1 = stepObj t { ball | vx <- newVx ,
+    ball' = stepObj t { ball | vx <- newVx ,
                                vy <- stepV vy hitPlayer hitCeiling }
   in
-    (foldr goBrickHits (ball1,[]) bricks, contacts')
+    (foldr goBrickHits (ball',[]) bricks, contacts')
 
 {-| Calculate how the players properties have changed. -}
 stepPlayer : Time -> Int -> Player -> Player
