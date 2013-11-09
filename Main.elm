@@ -169,7 +169,7 @@ brick x y w h = {x=x, y=y, w=w, h=h }
 {-| Creation of one single row of bricks with equidistant gaps. -}
 brickRow : Float -> [Brick]
 brickRow y =
-  let xOff = toFloat (ceiling  (-brickCols / 2)) * brickDistX
+  let xOff = toFloat (ceiling (-brickCols / 2)) * brickDistX
   in map (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
        [0..brickCols-1]
 
