@@ -1,2 +1,2 @@
-firefox http://localhost:8000 &
+chromium-browser http://localhost:8000 &
 elm-server
