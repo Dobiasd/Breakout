@@ -10,7 +10,9 @@ To add horizontal speed to the ball, move the paddle while serving/hitting.
 -}
 
 import Keyboard
+import Maybe
 import String
+import Text
 import Touch
 import Window
 
@@ -88,16 +90,16 @@ touchInQuadrant q (w,h) touch =
     if qExists then Just (x `xCmp` centerX && y `yCmp` centerY) else Nothing
 
 touchUpperRight : (Int,Int) -> Touch.Touch -> Bool
-touchUpperRight = (.) (maybe False id) . touchInQuadrant 1
+touchUpperRight = (<<) (Maybe.maybe False identity) << touchInQuadrant 1
 
 touchUpperLeft : (Int,Int) -> Touch.Touch -> Bool
-touchUpperLeft = (.) (maybe False id) . touchInQuadrant 2
+touchUpperLeft = (<<) (Maybe.maybe False identity) << touchInQuadrant 2
 
 touchLowerLeft : (Int,Int) -> Touch.Touch -> Bool
-touchLowerLeft = (.) (maybe False id) . touchInQuadrant 3
+touchLowerLeft = (<<) (Maybe.maybe False identity) << touchInQuadrant 3
 
 touchLowerRight : (Int,Int) -> Touch.Touch -> Bool
-touchLowerRight = (.) (maybe False id) . touchInQuadrant 4
+touchLowerRight = (<<) (Maybe.maybe False identity) << touchInQuadrant 4
 
 {-| Was the upper half of the screen touched? -}
 touchUpper : (Int,Int) -> Touch.Touch -> Bool
@@ -326,7 +328,7 @@ gameState = foldp stepGame defaultGame input
 
 {-| Render text using a given transformation function. -}
 txt : (Text -> Text) -> String -> Element
-txt f = text . f . monospace . Text.color textBlue . toText
+txt f = toText >> Text.color textBlue >> monospace >> f >> leftAligned
 
 {-| Take a shape, give it a color and move it to the objects position. -}
 make : Color -> Positioned a -> Shape -> Form
@@ -335,7 +337,7 @@ make color obj shape = shape |> filled color
 
 {-| Generate the rainbow color of a brick depending on its position. -}
 brickColor : Brick -> Color
-brickColor b = hsv (brickColorFactor * (b.x + b.y)) 1 1
+brickColor b = hsl (brickColorFactor * (b.x + b.y)) 1 0.5
 
 {-| Dummy for cases in which an game object or text should be invisible. -}
 noForm : Form
@@ -384,7 +386,7 @@ display {state,gameBall,player,bricks,spareBalls,contacts} =
     background = rect gameWidth gameHeight |> filled breakoutBlue
     ball = circle gameBall.r |> make lightGray gameBall
     paddle = rect player.w player.h |> make darkGray player
-    serveTextForm = if state == Serve then txt id manualMsg |> toForm
+    serveTextForm = if state == Serve then txt identity manualMsg |> toForm
                             |> move (0, msgTextPosY)
                             else noForm
     endMsg = case state of
@@ -397,8 +399,9 @@ display {state,gameBall,player,bricks,spareBalls,contacts} =
     brickRects = group <| map (\b -> rect b.w b.h |> make (brickColor b) b)
                             bricks
     quadrants = displayQuadrants (gameWidth,gameHeight) state
-    pointsTextForm = txt id pointsMsg |> toForm |> move pointsTextPos
-    spareBallsForm = txt id spareBallsMsg |> toForm |> move spareBallsTextPos
+    pointsTextForm = txt identity pointsMsg |> toForm |> move pointsTextPos
+    spareBallsForm = txt identity spareBallsMsg |> toForm
+      |> move spareBallsTextPos
   in
     group
       [ background
