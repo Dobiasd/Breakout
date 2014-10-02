@@ -377,13 +377,23 @@ pointsText bricksLeft spareBalls contacts =
   in
     "points: " ++ (String.padLeft maxPointsStrLen ' ' <| show points)
 
-{-| Draw game into a form with size (gameWidth,gameHeight). -}
-display : Game -> Form
-display {state,gameBall,player,bricks,spareBalls,contacts} =
+{-| Draw background into a fullscreen-sized Element. -}
+displayBricks : (Int,Int) -> [Brick] -> Element
+displayBricks (w, h) bricks =
+  let
+    background = rect gameWidth gameHeight |> filled breakoutBlue
+    brickRects = group <| map (\b -> rect b.w b.h |> make (brickColor b) b)
+                            bricks
+    gameScale = min (toFloat w / gameWidth) (toFloat h / gameHeight)
+  in
+    displayFullScreen (w, h) (group [ background, brickRects ])
+
+{-| Draw foreground into a fullscreen-sized Element. -}
+displayForeground : (Int,Int) -> Game -> Element
+displayForeground (w,h) {state,gameBall,player,bricks,spareBalls,contacts} =
   let
     pointsMsg = pointsText (length bricks) spareBalls contacts
     spareBallsMsg = "spare balls: " ++ show spareBalls
-    background = rect gameWidth gameHeight |> filled breakoutBlue
     ball = circle gameBall.r |> make lightGray gameBall
     paddle = rect player.w player.h |> make darkGray player
     serveTextForm = if state == Serve then txt identity manualMsg |> toForm
@@ -396,31 +406,46 @@ display {state,gameBall,player,bricks,spareBalls,contacts} =
     showEndText = state == Won || state == Lost
     endText = txt (Text.height endTextHeight) (pointsMsg ++ "\n" ++ endMsg)
     endTextForm = if showEndText then endText |> toForm else noForm
-    brickRects = group <| map (\b -> rect b.w b.h |> make (brickColor b) b)
-                            bricks
     quadrants = displayQuadrants (gameWidth,gameHeight) state
     pointsTextForm = txt identity pointsMsg |> toForm |> move pointsTextPos
     spareBallsForm = txt identity spareBallsMsg |> toForm
       |> move spareBallsTextPos
   in
-    group
-      [ background
-      , brickRects
-      , paddle
-      , ball
-      , serveTextForm
-      , pointsTextForm
-      , spareBallsForm
-      , endTextForm
-      , quadrants
-      ]
+    displayFullScreen (w, h) <|
+      group
+        [ paddle
+        , ball
+        , serveTextForm
+        , pointsTextForm
+        , spareBallsForm
+        , endTextForm
+        , quadrants
+        ]
 
-{-| Draw game maximized into the window. -}
-displayFullScreen : (Int,Int) -> Game -> Element
-displayFullScreen (w,h) game =
+{-| Draw a Form maximized into the window. -}
+displayFullScreen : (Int,Int) -> Form -> Element
+displayFullScreen (w,h) content =
   let
     gameScale = min (toFloat w / gameWidth) (toFloat h / gameHeight)
   in
-    collage w h [display game |> scale gameScale]
+    collage w h [content |> scale gameScale]
 
-main = lift2 displayFullScreen Window.dimensions <| dropRepeats gameState
+{-| Change in brick configuration. -}
+bricksSignal : Signal [Brick]
+bricksSignal = (.bricks <~ gameState) |> dropRepeats
+
+{-| The changing background Element. -}
+background : Signal Element
+background = displayBricks <~ Window.dimensions ~ bricksSignal
+
+{-| The changing foreground Element. -}
+foreground : Signal Element
+foreground = displayForeground <~ Window.dimensions ~ gameState
+
+{-| Display the game.
+Background and foreground are splitted, so the background
+is only redrawn when really needed, i.e. bricks change. -}
+display : Element -> Element -> Element
+display background foreground = layers [background, foreground]
+
+main = display <~ background ~ foreground
