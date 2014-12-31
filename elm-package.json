@@ -1,6 +1,6 @@
 {
     "version": "1.0.0",
-    "summary": "A clone of the classical game for your browser. ",
+    "summary": "A clone of the classical game for your browser.",
     "repository": "https://github.com/Dobiasd/Breakout.git",
     "license": "MIT",
     "source-directories": [
