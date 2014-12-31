@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "summary": "A clone of the classical game for your browser. ",
+    "repository": "https://github.com/Dobiasd/Breakout.git",
+    "license": "MIT",
+    "source-directories": [
+        "."
+    ],
+    "exposed-modules": [],
+    "dependencies": {
+        "elm-lang/core": "1.0.0 <= v < 2.0.0"
+    }
+}
