@@ -9,10 +9,19 @@ paddle touch cost points. Every hit brick adds points.
 To add horizontal speed to the ball, move the paddle while serving/hitting.
 -}
 
+import Color(Color, rgb, rgba, hsl, lightGray, darkGray)
+import Graphics.Element(Element, layers)
+import Graphics.Collage(filled, move, Shape, Form, rect, group, traced, solid
+  , circle, toForm, collage, scale)
 import Keyboard
+import List((::))
+import List
 import Maybe
+import Signal((<~),(~))
+import Signal
 import String
 import Text
+import Time
 import Touch
 import Window
 
@@ -89,75 +98,80 @@ touchInQuadrant q (w,h) touch =
   in
     if qExists then Just (x `xCmp` centerX && y `yCmp` centerY) else Nothing
 
+
+maybe : b -> (a -> b) -> Maybe.Maybe a -> b
+maybe def f val = Maybe.withDefault def (Maybe.map f val)
+
 touchUpperRight : (Int,Int) -> Touch.Touch -> Bool
-touchUpperRight = (<<) (Maybe.maybe False identity) << touchInQuadrant 1
+touchUpperRight = (<<) (maybe False identity) << touchInQuadrant 1
 
 touchUpperLeft : (Int,Int) -> Touch.Touch -> Bool
-touchUpperLeft = (<<) (Maybe.maybe False identity) << touchInQuadrant 2
+touchUpperLeft = (<<) (maybe False identity) << touchInQuadrant 2
 
 touchLowerLeft : (Int,Int) -> Touch.Touch -> Bool
-touchLowerLeft = (<<) (Maybe.maybe False identity) << touchInQuadrant 3
+touchLowerLeft = (<<) (maybe False identity) << touchInQuadrant 3
 
 touchLowerRight : (Int,Int) -> Touch.Touch -> Bool
-touchLowerRight = (<<) (Maybe.maybe False identity) << touchInQuadrant 4
+touchLowerRight = (<<) (maybe False identity) << touchInQuadrant 4
 
 {-| Was the upper half of the screen touched? -}
 touchUpper : (Int,Int) -> Touch.Touch -> Bool
 touchUpper (w,h) t = touchUpperLeft (w,h) t || touchUpperRight (w,h) t
 
 {-| Touching the upper quadrant can be used to serve like the space key. -}
-spaceSignal : Signal Bool
+spaceSignal : Signal.Signal Bool
 spaceSignal =
   let
-    f space touches (w,h) = space || any (touchUpper (w,h)) touches
+    f space touches (w,h) = space || List.any (touchUpper (w,h)) touches
   in
-    lift3 f Keyboard.space Touch.touches Window.dimensions
+    Signal.map3 f Keyboard.space Touch.touches Window.dimensions
 
 {-| The paddle can be moved with the arrow keys
 or by touching the lower quadrants. -}
-dirSignal : Signal Int
+dirSignal : Signal.Signal Int
 dirSignal =
   let
     f arrows touches (w,h) =
       let
-        touchLeft = if any (touchLowerLeft (w,h)) touches then 1 else 0
-        touchRight = if any (touchLowerRight (w,h)) touches then 1 else 0
+        touchLeft = if List.any (touchLowerLeft (w,h)) touches then 1 else 0
+        touchRight = if List.any (touchLowerRight (w,h)) touches then 1 else 0
       in
         arrows.x + touchRight - touchLeft
   in
-    lift3 f Keyboard.arrows Touch.touches Window.dimensions
+    Signal.map3 f Keyboard.arrows Touch.touches Window.dimensions
 
 {-| Game speed can be adjusted. -}
-delta : Signal Float
-delta = lift (\d -> speedFactor * d) <| inSeconds <~ fps framesPerSecond
+delta : Signal.Signal Float
+delta = Signal.map (\d -> speedFactor * d)
+        <| Time.inSeconds <~ Time.fps framesPerSecond
 
 {-| Relevant things that can change are:
 - did the user serve the ball?
 - input direction of the paddle
 - time delta between this and the last frame. -}
-type Input = { space:Bool, dir:Int, delta:Time }
+type alias Input = { space:Bool, dir:Int, delta:Time.Time }
 
-input : Signal Input
-input = sampleOn delta (Input <~ spaceSignal
-                               ~ dirSignal
-                               ~ delta)
+input : Signal.Signal Input
+input = Signal.sampleOn delta (Input <~ spaceSignal
+                                      ~ dirSignal
+                                      ~ delta)
 
 
 -- /-------\
 -- | model |
 -- \-------/
 
-type Positioned a = { a | x:Float, y:Float }
-type Moving     a = { a | vx:Float, vy:Float }
-type Sized      a = { a | w:Float, h:Float }
+type alias Positioned a = { a | x:Float, y:Float }
+type alias Moving     a = { a | vx:Float, vy:Float }
+type alias Sized      a = { a | w:Float, h:Float }
 
-type Box = Sized (Positioned {})
-type Brick = Box
+type alias Box = Sized (Positioned {})
+type alias Brick = Box
 
-type Ball = Moving (Positioned { r:Float })
-type Player = Moving Box
+type alias Ball = Moving (Positioned { r:Float })
+type alias Player = Moving Box
 
-data State = Play | Serve | Won | Lost
+type State = Play | Serve | Won | Lost
 
 ball : Float -> Float -> Float -> Float -> Float -> Ball
 ball x y vx vy r = {x=x, y=y, vx=vx, vy=vy, r=r }
@@ -169,32 +183,32 @@ brick : Float -> Float -> Float -> Float -> Brick
 brick x y w h = {x=x, y=y, w=w, h=h }
 
 {-| Creation of one single row of bricks with equidistant gaps. -}
-brickRow : Float -> [Brick]
+brickRow : Float -> List Brick
 brickRow y =
   let xOff = toFloat (ceiling (-brickCols / 2)) * brickDistX
-  in map (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
+  in List.map (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
        [0..brickCols-1]
 
-type Game = { state:State
-            , gameBall:Ball
-            , player:Player
+type alias Game = { state:State
+                  , gameBall:Ball
+                  , player:Player
 
 -- The bricks still left in the game.
-            , bricks:[Brick]
+                  , bricks:List Brick
 
 -- How many balls are left? (excluding the one currently played)
-            , spareBalls:Int
+                  , spareBalls:Int
 
 -- Count the number of contacts of the paddle with a ball.
-            , contacts:Int }
+                  , contacts:Int }
 
 defaultGame : Game
 defaultGame =
   { state      = Serve
   , gameBall   = ball 0 (paddleYPos + ballRadius) 0 0 ballRadius
   , player     = player 0 paddleYPos 0 0 paddleWidths paddleHeight
-  , bricks     = map ((*) brickDistY) [0..brickRows-1] |>
-                   map brickRow |> concat
+  , bricks     = List.map ((*) brickDistY) [0..brickRows-1] |>
+                   List.map brickRow |> List.concat
   , spareBalls = startSpareBalls
   , contacts   = 0
   }
@@ -231,15 +245,15 @@ speedUp ({vx, vy} as obj) = {obj | vx <- speedIncX * vx
                                  , vy <- speedIncY * vy }
 
 {-| Simple weighted arithmetic mean. -}
-weightedAvg : [number] -> [number] -> number
+weightedAvg : List number -> List number -> number
 weightedAvg values weights =
   let
-    weightedVals = zipWith (*) values weights
+    weightedVals = List.map2 (*) values weights
   in
-    sum weightedVals / sum weights
+    List.sum weightedVals / List.sum weights
 
 {-| foldr function for ball brick collisions. -}
-goBrickHits : Brick -> (Ball,[Brick]) -> (Ball,[Brick])
+goBrickHits : Brick -> (Ball,List Brick) -> (Ball,List Brick)
 goBrickHits brick (ball,bricks) =
   let
     hit = ball `within` brick
@@ -252,7 +266,8 @@ goBrickHits brick (ball,bricks) =
 during a given timestep.
 Returns the new ball properties, the bricks left and perhaps increased
 count of paddle ball contact. -}
-stepBall : Time -> Ball -> Player -> [Brick] -> Int -> ((Ball,[Brick]), Int)
+stepBall : Time.Time -> Ball -> Player -> List Brick -> Int
+           -> ((Ball, List Brick), Int)
 stepBall t ({x,y,vx,vy} as ball) p bricks contacts =
   let
     hitPlayer = (ball `within` p)
@@ -264,10 +279,10 @@ stepBall t ({x,y,vx,vy} as ball) p bricks contacts =
     ball' = stepObj t { ball | vx <- newVx ,
                                vy <- stepV vy hitPlayer hitCeiling }
   in
-    (foldr goBrickHits (ball',[]) bricks, contacts')
+    (List.foldr goBrickHits (ball',[]) bricks, contacts')
 
 {-| Calculate how the players properties have changed. -}
-stepPlayer : Time -> Int -> Player -> Player
+stepPlayer : Time.Time -> Int -> Player -> Player
 stepPlayer t dir p =
   let p1 = stepObj t { p | vx <- p.vx * brake + toFloat dir * paddleSpeed }
   in  { p1 | x <- clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x }
@@ -292,7 +307,7 @@ stepPlay {delta} ({gameBall,player,bricks,spareBalls,contacts} as game) =
     spareBalls' = if ballLost then spareBalls - 1 else spareBalls
     state' = if | gameOver -> Lost
                 | ballLost -> Serve
-                | isEmpty bricks -> Won
+                | List.isEmpty bricks -> Won
                 | otherwise -> Play
     ((ball', bricks'), contacts') =
       stepBall delta gameBall player bricks contacts
@@ -318,8 +333,8 @@ stepServe {space} ({player,gameBall} as game) =
 stepGameOver : Input -> Game -> Game
 stepGameOver {space} ({state} as game) = if space then defaultGame else game
 
-gameState : Signal Game
-gameState = foldp stepGame defaultGame input
+gameState : Signal.Signal Game
+gameState = Signal.foldp stepGame defaultGame input
 
 
 -- /---------\
@@ -327,8 +342,12 @@ gameState = foldp stepGame defaultGame input
 -- \---------/
 
 {-| Render text using a given transformation function. -}
-txt : (Text -> Text) -> String -> Element
-txt f = toText >> Text.color textBlue >> monospace >> f >> leftAligned
+txt : (Text.Text -> Text.Text) -> String -> Element
+txt f = Text.fromString
+        >> Text.color textBlue
+        >> Text.monospace
+        >> f
+        >> Text.leftAligned
 
 {-| Take a shape, give it a color and move it to the objects position. -}
 make : Color -> Positioned a -> Shape -> Form
@@ -373,17 +392,17 @@ pointsText : Int -> Int -> Int -> String
 pointsText bricksLeft spareBalls contacts =
   let
     (points,maxPoints) = calcPoints bricksLeft spareBalls contacts
-    maxPointsStrLen = String.length <| show maxPoints
+    maxPointsStrLen = String.length <| toString maxPoints
   in
-    "points: " ++ (String.padLeft maxPointsStrLen ' ' <| show points)
+    "points: " ++ (String.padLeft maxPointsStrLen ' ' <| toString points)
 
 {-| Draw background into a fullscreen-sized Element. -}
-displayBricks : (Int,Int) -> [Brick] -> Element
+displayBricks : (Int,Int) -> List Brick -> Element
 displayBricks (w, h) bricks =
   let
     background = rect gameWidth gameHeight |> filled breakoutBlue
-    brickRects = group <| map (\b -> rect b.w b.h |> make (brickColor b) b)
-                            bricks
+    brickRects = group <| List.map (\b -> rect b.w b.h |> make (brickColor b) b)
+                                   bricks
     gameScale = min (toFloat w / gameWidth) (toFloat h / gameHeight)
   in
     displayFullScreen (w, h) (group [ background, brickRects ])
@@ -392,8 +411,8 @@ displayBricks (w, h) bricks =
 displayForeground : (Int,Int) -> Game -> Element
 displayForeground (w,h) {state,gameBall,player,bricks,spareBalls,contacts} =
   let
-    pointsMsg = pointsText (length bricks) spareBalls contacts
-    spareBallsMsg = "spare balls: " ++ show spareBalls
+    pointsMsg = pointsText (List.length bricks) spareBalls contacts
+    spareBallsMsg = "spare balls: " ++ toString spareBalls
     ball = circle gameBall.r |> make lightGray gameBall
     paddle = rect player.w player.h |> make darkGray player
     serveTextForm = if state == Serve then txt identity manualMsg |> toForm
@@ -431,15 +450,15 @@ displayFullScreen (w,h) content =
     collage w h [content |> scale gameScale]
 
 {-| Change in brick configuration. -}
-bricksSignal : Signal [Brick]
-bricksSignal = (.bricks <~ gameState) |> dropRepeats
+bricksSignal : Signal.Signal (List Brick)
+bricksSignal = (.bricks <~ gameState) |> Signal.dropRepeats
 
 {-| The changing background Element. -}
-background : Signal Element
+background : Signal.Signal Element
 background = displayBricks <~ Window.dimensions ~ bricksSignal
 
 {-| The changing foreground Element. -}
-foreground : Signal Element
+foreground : Signal.Signal Element
 foreground = displayForeground <~ Window.dimensions ~ gameState
 
 {-| Display the game.
