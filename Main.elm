@@ -9,15 +9,15 @@ paddle touch cost points. Every hit brick adds points.
 To add horizontal speed to the ball, move the paddle while serving/hitting.
 -}
 
-import Color(Color, rgb, rgba, hsl, lightGray, darkGray)
-import Graphics.Element(Element, layers)
-import Graphics.Collage(filled, move, Shape, Form, rect, group, traced, solid
-  , circle, toForm, collage, scale)
+import Color exposing (Color, rgb, rgba, hsl, lightGray, darkGray)
+import Graphics.Element exposing (Element, layers, leftAligned)
+import Graphics.Collage exposing (filled, move, Shape, Form, rect, group
+  ,traced, solid, circle, toForm, collage, scale)
 import Keyboard
-import List((::))
+import List exposing ((::))
 import List
 import Maybe
-import Signal((<~),(~))
+import Signal exposing ((<~),(~))
 import Signal
 import String
 import Text
@@ -169,7 +169,7 @@ type alias Box = Sized (Positioned {})
 type alias Brick = Box
 
 type alias Ball = Moving (Positioned { r:Float })
-type alias Player = Moving Box
+type alias Player = Moving (Sized (Positioned {}))
 
 type State = Play | Serve | Won | Lost
 
@@ -347,7 +347,7 @@ txt f = Text.fromString
         >> Text.color textBlue
         >> Text.monospace
         >> f
-        >> Text.leftAligned
+        >> leftAligned
 
 {-| Take a shape, give it a color and move it to the objects position. -}
 make : Color -> Positioned a -> Shape -> Form
