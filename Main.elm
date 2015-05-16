@@ -258,9 +258,9 @@ goBrickHits brick (ball,bricks) =
   let
     hit = ball `within` brick
     bricks' = if hit then bricks else brick::bricks
-    ball' = if hit then { ball | vy <- -ball.vy } else ball
+    ball' = if hit then speedUp { ball | vy <- -ball.vy } else ball
   in
-    (if hit then speedUp ball' else ball', bricks')
+    (ball', bricks')
 
 {-| Collision handling of the ball with the paddle and the bricks
 during a given timestep.
