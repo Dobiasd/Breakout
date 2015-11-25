@@ -1,14 +1,14 @@
 {
     "version": "1.0.0",
     "summary": "A clone of the classical game for your browser.",
-    "repository": "https://github.com/Dobiasd/Breakout.git",
+    "repository": "https://github.com/dobiasd/breakout.git",
     "license": "MIT",
     "source-directories": [
         "."
     ],
     "exposed-modules": [],
     "dependencies": {
-        "elm-lang/core": "2.0.1 <= v < 3.0.0"
+        "elm-lang/core": "3.0.0 <= v < 4.0.0"
     },
-    "elm-version": "0.15.0 <= v < 0.16.0"
+    "elm-version": "0.16.0 <= v < 0.17.0"
 }

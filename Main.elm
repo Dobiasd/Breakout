@@ -12,12 +12,12 @@ To add horizontal speed to the ball, move the paddle while serving/hitting.
 import Color exposing (Color, rgb, rgba, hsl, lightGray, darkGray)
 import Graphics.Element exposing (Element, layers, leftAligned)
 import Graphics.Collage exposing (filled, move, Shape, Form, rect, group
-  ,traced, solid, circle, toForm, collage, scale)
+  ,traced, solid, circle, toForm, collage, scale, path)
 import Keyboard
 import List exposing ((::))
 import List
 import Maybe
-import Signal exposing ((<~),(~))
+import Signal
 import Signal
 import String
 import Text
@@ -143,7 +143,7 @@ dirSignal =
 {-| Game speed can be adjusted. -}
 delta : Signal.Signal Float
 delta = Signal.map (\d -> speedFactor * d)
-        <| Time.inSeconds <~ Time.fps framesPerSecond
+        <| Signal.map Time.inSeconds (Time.fps framesPerSecond)
 
 {-| Relevant things that can change are:
 - did the user serve the ball?
@@ -152,9 +152,9 @@ delta = Signal.map (\d -> speedFactor * d)
 type alias Input = { space:Bool, dir:Int, delta:Time.Time }
 
 input : Signal.Signal Input
-input = Signal.sampleOn delta (Input <~ spaceSignal
-                                      ~ dirSignal
-                                      ~ delta)
+input = Signal.sampleOn delta (Signal.map3 Input spaceSignal
+                                      dirSignal
+                                      delta)
 
 
 -- /-------\
@@ -221,7 +221,7 @@ defaultGame =
 {-| Move an object according to its speed for a given time step t. -}
 stepObj : Float -> Moving (Positioned a) -> Moving (Positioned a)
 stepObj t ({x,y,vx,vy} as obj) =
-    { obj | x <- x + vx*t, y <- y + vy*t }
+    { obj | x = x + vx*t, y = y + vy*t }
 
 {-| Is the distance between n and k less or equal c? -}
 near : number -> number -> number -> Bool
@@ -235,17 +235,17 @@ within ball box = (ball.x |> near box.x (ball.r + box.w / 2))
 {-| Keep an object with speed v inside its lower and upper bounds. -}
 stepV : Float -> Bool -> Bool -> Float
 stepV v lowerCollision upperCollision =
-  if | lowerCollision -> abs v
-     | upperCollision -> 0 - abs v
-     | otherwise      -> v
+  if lowerCollision then abs v
+     else if upperCollision then 0 - abs v
+     else v
 
 {-| Increate the speed of a moving object. -}
 speedUp : Moving a -> Moving a
-speedUp ({vx, vy} as obj) = {obj | vx <- speedIncX * vx
-                                 , vy <- speedIncY * vy }
+speedUp ({vx, vy} as obj) = {obj | vx = speedIncX * vx
+                                 , vy = speedIncY * vy }
 
 {-| Simple weighted arithmetic mean. -}
-weightedAvg : List number -> List number -> number
+weightedAvg : List Float -> List Float -> Float
 weightedAvg values weights =
   let
     weightedVals = List.map2 (*) values weights
@@ -258,7 +258,7 @@ goBrickHits brick (ball,bricks) =
   let
     hit = ball `within` brick
     bricks' = if hit then bricks else brick::bricks
-    ball' = if hit then speedUp { ball | vy <- -ball.vy } else ball
+    ball' = if hit then speedUp { ball | vy = -ball.vy } else ball
   in
     (ball', bricks')
 
@@ -276,27 +276,27 @@ stepBall t ({x,y,vx,vy} as ball) p bricks contacts =
                weightedAvg [p.vx, vx] [traction, 1-traction] else
                stepV vx (x < (ball.r-halfWidth)) (x > halfWidth-ball.r)
     hitCeiling = (y > halfHeight - ball.r)
-    ball' = stepObj t { ball | vx <- newVx ,
-                               vy <- stepV vy hitPlayer hitCeiling }
+    ball' = stepObj t { ball | vx = newVx ,
+                               vy = stepV vy hitPlayer hitCeiling }
   in
     (List.foldr goBrickHits (ball',[]) bricks, contacts')
 
 {-| Calculate how the players properties have changed. -}
 stepPlayer : Time.Time -> Int -> Player -> Player
 stepPlayer t dir p =
-  let p1 = stepObj t { p | vx <- p.vx * brake + toFloat dir * paddleSpeed }
-  in  { p1 | x <- clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x }
+  let p1 = stepObj t { p | vx = p.vx * brake + toFloat dir * paddleSpeed }
+  in  { p1 | x = clamp (p.w/2-halfWidth) (halfWidth-p.w/2) p1.x }
 
 {-| Update player position and
 dispatch according to the current game state. -}
 stepGame : Input -> Game -> Game
 stepGame ({dir,delta} as input) ({state,player} as game) =
   let
-    func = if | state == Play  -> stepPlay
-              | state == Serve -> stepServe
-              | otherwise      -> stepGameOver
+    func = if state == Play then stepPlay
+           else if state == Serve then stepServe
+           else stepGameOver
   in
-    func input { game | player <- stepPlayer delta dir player }
+    func input { game | player = stepPlayer delta dir player }
 
 {-| Step game when the ball is bouncing around. -}
 stepPlay : Input -> Game -> Game
@@ -305,18 +305,18 @@ stepPlay {delta} ({gameBall,player,bricks,spareBalls,contacts} as game) =
     ballLost = gameBall.y - gameBall.r < -halfHeight
     gameOver = ballLost && spareBalls == 0
     spareBalls' = if ballLost then spareBalls - 1 else spareBalls
-    state' = if | gameOver -> Lost
-                | ballLost -> Serve
-                | List.isEmpty bricks -> Won
-                | otherwise -> Play
+    state' = if gameOver then Lost
+             else if ballLost then Serve
+             else if List.isEmpty bricks then Won
+             else Play
     ((ball', bricks'), contacts') =
       stepBall delta gameBall player bricks contacts
   in
-    { game | state      <- state'
-           , gameBall   <- ball'
-           , bricks     <- bricks'
-           , spareBalls <- max 0 spareBalls' -- No -1 when game is lost.
-           , contacts   <- contacts' }
+    { game | state      = state'
+           , gameBall   = ball'
+           , bricks     = bricks'
+           , spareBalls = max 0 spareBalls' -- No -1 when game is lost.
+           , contacts   = contacts' }
 
 {-| Step game when the player needs to serve the ball. -}
 stepServe : Input -> Game -> Game
@@ -326,8 +326,8 @@ stepServe {space} ({player,gameBall} as game) =
                    (traction*player.vx) serveSpeed gameBall.r
     state' = if space then Play else Serve
   in
-    { game | state    <- state'
-           , gameBall <- newBall }
+    { game | state    = state'
+           , gameBall = newBall }
 
 {-| Change nothing except the user wants to play again. -}
 stepGameOver : Input -> Game -> Game
@@ -367,8 +367,8 @@ displayQuadrants : (Float,Float) -> State -> Form
 displayQuadrants (w,h) state =
   let
     grid  = group
-              [ [(0   ,0), (0  ,-h/2)] |> traced (solid quadrantCol)
-              , [(-w/2,0), (w/2,   0)] |> traced (solid quadrantCol)
+              [ path [(0   ,0), (0  ,-h/2)] |> traced (solid quadrantCol)
+              , path [(-w/2,0), (w/2,   0)] |> traced (solid quadrantCol)
               ]
   in
     if state == Serve then grid else noForm
@@ -451,15 +451,15 @@ displayFullScreen (w,h) content =
 
 {-| Change in brick configuration. -}
 bricksSignal : Signal.Signal (List Brick)
-bricksSignal = (.bricks <~ gameState) |> Signal.dropRepeats
+bricksSignal = (Signal.map .bricks gameState) |> Signal.dropRepeats
 
 {-| The changing background Element. -}
 background : Signal.Signal Element
-background = displayBricks <~ Window.dimensions ~ bricksSignal
+background = Signal.map2 displayBricks Window.dimensions bricksSignal
 
 {-| The changing foreground Element. -}
 foreground : Signal.Signal Element
-foreground = displayForeground <~ Window.dimensions ~ gameState
+foreground = Signal.map2 displayForeground Window.dimensions gameState
 
 {-| Display the game.
 Background and foreground are splitted, so the background
@@ -467,4 +467,4 @@ is only redrawn when really needed, i.e. bricks change. -}
 display : Element -> Element -> Element
 display background foreground = layers [background, foreground]
 
-main = display <~ background ~ foreground
+main = Signal.map2 display background foreground
