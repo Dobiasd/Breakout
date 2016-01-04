@@ -25,6 +25,8 @@ import Time
 import Touch
 import Window
 
+import AnimationFrame
+
 
 -- /---------------------\
 -- | model configuration |
@@ -34,9 +36,6 @@ import Window
                        and from -200 to +200 in y coordinates. -}
 (gameWidth,gameHeight) = (600,400)
 (halfWidth,halfHeight) = (toFloat gameWidth / 2, toFloat gameHeight / 2)
-
-{-| We aim for a maximally smooth gameplay. -}
-framesPerSecond = 60
 
 paddleSpeed = 110
 paddleWidths = 52
@@ -143,7 +142,7 @@ dirSignal =
 {-| Game speed can be adjusted. -}
 delta : Signal.Signal Float
 delta = Signal.map (\d -> speedFactor * d)
-        <| Signal.map Time.inSeconds (Time.fps framesPerSecond)
+        <| Signal.map Time.inSeconds AnimationFrame.frame
 
 {-| Relevant things that can change are:
 - did the user serve the ball?
