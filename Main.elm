@@ -332,7 +332,7 @@ subscriptions model =
         [ Keyboard.downs keyDownToMsg
         , Keyboard.ups keyUpToMsg
         , Mouse.downs Touch
-        , Mouse.ups Touch
+        , Mouse.ups (\_ -> TouchRelease)
         , AnimationFrame.diffs (\dt -> Tick (dt / 1000))
         , Window.resizes WindowSize
         ]
