@@ -51,9 +51,7 @@ getWindowSizeCommand =
 
 
 
--- /---------------------\
--- | model configuration |
--- \---------------------/
+-- MODEL
 
 
 modelCfg =
@@ -97,10 +95,6 @@ modelCfg =
     , pointsPerContact = -1
     , speedFactor = 1
     }
-
-
-
--- MODEL
 
 
 type alias Positioned a =
@@ -651,9 +645,7 @@ serveBall ({ player, gameBall } as model) =
 
 
 
--- /--------------------\
--- | view configuration |
--- \--------------------/
+-- VIEW
 
 
 viewCfg =
@@ -671,10 +663,6 @@ viewCfg =
     , textBlue = rgb 160 160 200
     , quadrantCol = rgba 0 0 0 0.4
     }
-
-
-
--- VIEW
 
 
 view : Model -> Html Msg
