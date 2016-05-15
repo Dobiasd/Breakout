@@ -30,10 +30,8 @@ import String
 import Task
 import Text
 import Time
-import Mouse
 import Window
 import AnimationFrame
-import Update.Extra.Infix exposing ((:>))
 
 
 main =
@@ -219,8 +217,6 @@ type Msg
     | LeftUp
     | RightDown
     | RightUp
-    | Touch Mouse.Position
-    | TouchRelease
     | WindowSize Window.Size
     | Tick Time.Time
 
@@ -254,79 +250,11 @@ keyUpToMsg kc =
             NoOp
 
 
-{-| Check if the user touched one of the four screen quadrants.
--}
-touchInQuadrant : Int -> Window.Size -> Mouse.Position -> Maybe Bool
-touchInQuadrant q { width, height } touch =
-    let
-        ( centerX, centerY ) =
-            ( toFloat width / 2, toFloat height / 2 )
-
-        ( x, y ) =
-            ( toFloat touch.x, toFloat touch.y )
-
-        ( qExists, xCmp, yCmp ) =
-            case q of
-                1 ->
-                    ( True, (>), (<) )
-
-                2 ->
-                    ( True, (<), (<) )
-
-                3 ->
-                    ( True, (<), (>) )
-
-                4 ->
-                    ( True, (>), (>) )
-
-                _ ->
-                    ( False, (==), (==) )
-    in
-        if qExists then
-            Just (x `xCmp` centerX && y `yCmp` centerY)
-        else
-            Nothing
-
-
-maybe : b -> (a -> b) -> Maybe.Maybe a -> b
-maybe def f val =
-    Maybe.withDefault def (Maybe.map f val)
-
-
-touchUpperRight : Window.Size -> Mouse.Position -> Bool
-touchUpperRight =
-    (<<) (maybe False identity) << touchInQuadrant 1
-
-
-touchUpperLeft : Window.Size -> Mouse.Position -> Bool
-touchUpperLeft =
-    (<<) (maybe False identity) << touchInQuadrant 2
-
-
-touchLowerLeft : Window.Size -> Mouse.Position -> Bool
-touchLowerLeft =
-    (<<) (maybe False identity) << touchInQuadrant 3
-
-
-touchLowerRight : Window.Size -> Mouse.Position -> Bool
-touchLowerRight =
-    (<<) (maybe False identity) << touchInQuadrant 4
-
-
-{-| Was the upper half of the screen touched?
--}
-touchUpper : Window.Size -> Mouse.Position -> Bool
-touchUpper winSize t =
-    touchUpperLeft winSize t || touchUpperRight winSize t
-
-
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Keyboard.downs keyDownToMsg
         , Keyboard.ups keyUpToMsg
-        , Mouse.downs Touch
-        , Mouse.ups (\_ -> TouchRelease)
         , AnimationFrame.diffs (\dt -> Tick (dt / 1000))
         , Window.resizes WindowSize
         ]
@@ -346,12 +274,7 @@ update msg model =
                             ( serveBall model, Cmd.none )
 
                         Won ->
-                            ( serveBall
-                                { model
-                                    | spareBalls = defaultModel.spareBalls
-                                }
-                            , Cmd.none
-                            )
+                            ( defaultModel, Cmd.none )
 
                         Lost ->
                             ( serveBall
@@ -378,19 +301,6 @@ update msg model =
 
                 WindowSize newSize ->
                     ( { model | windowDimensions = newSize }, Cmd.none )
-
-                Touch pos ->
-                    if touchUpper model.windowDimensions pos then
-                        update SpaceDown model
-                    else if touchLowerLeft model.windowDimensions pos then
-                        update LeftDown model
-                    else if touchLowerRight model.windowDimensions pos then
-                        update RightDown model
-                    else
-                        ( model, Cmd.none )
-
-                TouchRelease ->
-                    ( model, Cmd.none ) :> update LeftUp :> update RightUp
 
                 Tick dt ->
                     let
@@ -650,8 +560,7 @@ serveBall ({ player, gameBall } as model) =
 
 viewCfg =
     { manualMsg =
-        "SPACE to serve, &larr; and &rarr; to move;"
-            ++ " or just touch the quadrants"
+        "SPACE to serve, &larr; and &rarr; to move"
     , wonMsg = "Congratulations! Serve to restart."
     , lostMsg = "Serve to restart. ;)"
     , brickColorFactor = 0.01
@@ -661,7 +570,6 @@ viewCfg =
     , spareBallsTxtPos = ( modelCfg.halfWidth - 69, modelCfg.halfHeight - 10 )
     , breakoutBlue = rgb 60 60 100
     , textBlue = rgb 160 160 200
-    , quadrantCol = rgba 0 0 0 0.4
     }
 
 
@@ -717,25 +625,6 @@ brickColor b =
 noForm : Form
 noForm =
     rect 0 0 |> filled (rgba 0 0 0 0)
-
-
-{-| Draw the touch screen quadrants required for controlling the game.
--}
-displayQuadrants : ( Float, Float ) -> State -> Form
-displayQuadrants ( w, h ) state =
-    let
-        grid =
-            group
-                [ path [ ( 0, 0 ), ( 0, -h / 2 ) ]
-                    |> traced (solid viewCfg.quadrantCol)
-                , path [ ( -w / 2, 0 ), ( w / 2, 0 ) ]
-                    |> traced (solid viewCfg.quadrantCol)
-                ]
-    in
-        if state == Serve then
-            grid
-        else
-            noForm
 
 
 {-| How many points does the player have with his current game statistics,
@@ -841,9 +730,6 @@ displayForeground ({ state, gameBall, player, spareBalls } as model) =
             else
                 noForm
 
-        quadrants =
-            displayQuadrants ( modelCfg.gameWidth, modelCfg.gameHeight ) state
-
         pointsTextForm =
             txt identity pointsMsg |> toForm |> move viewCfg.pointsTextPos
 
@@ -860,5 +746,4 @@ displayForeground ({ state, gameBall, player, spareBalls } as model) =
                 , pointsTextForm
                 , spareBallsForm
                 , endTextForm
-                , quadrants
                 ]
