@@ -1,29 +1,54 @@
-module Breakout (..) where
+module Main exposing (..)
 
-{-| A simple clone of the classic arcade game Breakout.
-
-Destroy all bricks with the ball, moving the paddle my mouse or touch.
-The number of spare balls is restricted. Every lost ball and every
-paddle touch cost points. Every hit brick adds points.
-
-To add horizontal speed to the ball, move the paddle while serving/hitting.
--}
-
+import Html exposing (Html, Attribute, div, text, input)
+import Html.App exposing (program)
+import Html.Attributes exposing (..)
+import Html.Events exposing (onCheck)
 import Color exposing (Color, rgb, rgba, hsl, lightGray, darkGray)
-import Graphics.Element exposing (Element, layers, leftAligned)
-import Graphics.Collage exposing (filled, move, Shape, Form, rect, group, traced, solid, circle, toForm, collage, scale, path)
+import Element exposing (Element, layers, leftAligned)
+import Collage
+    exposing
+        ( filled
+        , move
+        , Shape
+        , Form
+        , rect
+        , group
+        , traced
+        , solid
+        , circle
+        , toForm
+        , collage
+        , scale
+        , path
+        )
 import Keyboard
 import List exposing ((::))
 import List
 import Maybe
-import Signal
-import Signal
 import String
+import Task
 import Text
 import Time
-import Touch
+import Mouse
 import Window
 import AnimationFrame
+import Update.Extra.Infix exposing ((:>))
+
+
+main =
+    program
+        { init = ( defaultModel, getWindowSizeCommand )
+        , update = update
+        , subscriptions = subscriptions
+        , view = view
+        }
+
+
+getWindowSizeCommand : Cmd Msg
+getWindowSizeCommand =
+    Task.perform (always NoOp) WindowSize Window.size
+
 
 
 -- /---------------------\
@@ -31,314 +56,51 @@ import AnimationFrame
 -- \---------------------/
 
 
-{-| The game field extends from -300 to +300 in x coordinates
-                       and from -200 to +200 in y coordinates.
--}
-( gameWidth, gameHeight ) =
-    ( 600, 400 )
-
-
-( halfWidth, halfHeight ) =
-    ( toFloat gameWidth / 2, toFloat gameHeight / 2 )
-
-
-paddleSpeed =
-    110
-
-
-paddleWidths =
-    52
-
-
-paddleHeight =
-    4
-
-
-brake =
-    0.7
-
-
-
--- If no input is present, the paddle will slow down.
-
-
-traction =
-    0.55
-
-
-
--- How much does the paddle speed influence the ball speed?
-
-
-serveSpeed =
-    200
-
-
-
--- initial y speed of the ball
-
-
-speedIncX =
-    1.01
-
-
-
--- the ball speeds up during play
-
-
-speedIncY =
-    1.02
-
-
-
--- in both directions
-
-
-paddleYPos =
-    40 - gameHeight / 2
-
-
-
--- paddle is near the screens bottom
-
-
-brickDistX =
-    80
-
-
-brickDistY =
-    33
-
-
-brickWidth =
-    50
-
-
-brickHeight =
-    10
-
-
-ballRadius =
-    7
-
-
-startSpareBalls =
-    2
-
-
-brickRows =
-    6
-
-
-brickCols =
-    7
-
-
-pointsPerBrick =
-    100
-
-
-pointsPerBall =
-    -10
-
-
-pointsPerContact =
-    -1
-
-
-speedFactor =
-    1
-
-
-
--- /--------------------\
--- | view configuration |
--- \--------------------/
-
-
-manualMsg =
-    "SPACE to serve, &larr; and &rarr; to move;"
-        ++ " or just touch the quadrants"
-
-
-wonMsg =
-    "Congratulations! Serve to restart."
-
-
-lostMsg =
-    "Serve to restart. ;)"
-
-
-brickColorFactor =
-    1.0e-2
-
-
-endTextHeight =
-    24
-
-
-msgTextPosY =
-    20 - halfHeight
-
-
-pointsTextPos =
-    ( 64 - halfWidth, halfHeight - 10 )
-
-
-spareBallsTextPos =
-    ( halfWidth - 69, halfHeight - 10 )
-
-
-breakoutBlue =
-    rgb 60 60 100
-
-
-textBlue =
-    rgb 160 160 200
-
-
-quadrantCol =
-    rgba 0 0 0 0.4
-
-
-
--- /--------\
--- | inputs |
--- \--------/
-
-
-{-| Check if the user touched one of the four screen quadrants.
--}
-touchInQuadrant : Int -> ( Int, Int ) -> Touch.Touch -> Maybe Bool
-touchInQuadrant q ( w, h ) touch =
-    let
-        ( centerX, centerY ) = ( toFloat w / 2, toFloat h / 2 )
-
-        ( x, y ) = ( toFloat touch.x, toFloat touch.y )
-
-        ( qExists, xCmp, yCmp ) =
-            case q of
-                1 ->
-                    ( True, (>), (<) )
-
-                2 ->
-                    ( True, (<), (<) )
-
-                3 ->
-                    ( True, (<), (>) )
-
-                4 ->
-                    ( True, (>), (>) )
-
-                _ ->
-                    ( False, (==), (==) )
-    in
-        if qExists then
-            Just (x `xCmp` centerX && y `yCmp` centerY)
-        else
-            Nothing
-
-
-maybe : b -> (a -> b) -> Maybe.Maybe a -> b
-maybe def f val =
-    Maybe.withDefault def (Maybe.map f val)
-
-
-touchUpperRight : ( Int, Int ) -> Touch.Touch -> Bool
-touchUpperRight =
-    (<<) (maybe False identity) << touchInQuadrant 1
-
-
-touchUpperLeft : ( Int, Int ) -> Touch.Touch -> Bool
-touchUpperLeft =
-    (<<) (maybe False identity) << touchInQuadrant 2
-
-
-touchLowerLeft : ( Int, Int ) -> Touch.Touch -> Bool
-touchLowerLeft =
-    (<<) (maybe False identity) << touchInQuadrant 3
-
-
-touchLowerRight : ( Int, Int ) -> Touch.Touch -> Bool
-touchLowerRight =
-    (<<) (maybe False identity) << touchInQuadrant 4
-
-
-{-| Was the upper half of the screen touched?
--}
-touchUpper : ( Int, Int ) -> Touch.Touch -> Bool
-touchUpper ( w, h ) t =
-    touchUpperLeft ( w, h ) t || touchUpperRight ( w, h ) t
-
-
-{-| Touching the upper quadrant can be used to serve like the space key.
--}
-spaceSignal : Signal.Signal Bool
-spaceSignal =
-    let
-        f space touches ( w, h ) = space || List.any (touchUpper ( w, h )) touches
-    in
-        Signal.map3 f Keyboard.space Touch.touches Window.dimensions
-
-
-{-| The paddle can be moved with the arrow keys
-or by touching the lower quadrants.
--}
-dirSignal : Signal.Signal Int
-dirSignal =
-    let
-        f arrows touches ( w, h ) =
-            let
-                touchLeft =
-                    if List.any (touchLowerLeft ( w, h )) touches then
-                        1
-                    else
-                        0
-
-                touchRight =
-                    if List.any (touchLowerRight ( w, h )) touches then
-                        1
-                    else
-                        0
-            in
-                arrows.x + touchRight - touchLeft
-    in
-        Signal.map3 f Keyboard.arrows Touch.touches Window.dimensions
-
-
-{-| Game speed can be adjusted.
--}
-delta : Signal.Signal Float
-delta =
-    Signal.map (\d -> speedFactor * d)
-        <| Signal.map Time.inSeconds AnimationFrame.frame
-
-
-{-| Relevant things that can change are:
-- did the user serve the ball?
-- input direction of the paddle
-- time delta between this and the last frame.
--}
-type alias Input =
-    { space : Bool, dir : Int, delta : Time.Time }
-
-
-input : Signal.Signal Input
-input =
-    Signal.sampleOn
-        delta
-        (Signal.map3
-            Input
-            spaceSignal
-            dirSignal
-            delta
-        )
-
-
-
--- /-------\
--- | model |
--- \-------/
+modelCfg =
+    { -- The game field extends from -300 to +300 in x coordinates
+      --                    and from -200 to +200 in y coordinates.
+      gameWidth = 600
+    , gameHeight = 400
+    , halfWidth = 300.0
+    , halfHeight = 200.0
+    , paddleSpeed = 110
+    , paddleWidths = 52
+    , paddleHeight = 4
+    , brake =
+        0.7
+        -- If no input is present, the paddle will slow down.
+    , traction =
+        0.55
+        -- How much does the paddle speed influence the ball speed?
+    , serveSpeed =
+        200
+        -- initial y speed of the ball
+    , speedIncX =
+        1.01
+        -- the ball speeds up during play
+    , speedIncY =
+        1.02
+        -- in both directions
+    , paddleYPos =
+        -160
+        -- paddle is near the screens bottom
+    , brickDistX = 80
+    , brickDistY = 33
+    , brickWidth = 50
+    , brickHeight = 10
+    , ballRadius = 7
+    , startSpareBalls = 2
+    , brickRows = 6
+    , brickCols = 7
+    , pointsPerBrick = 100
+    , pointsPerBall = -10
+    , pointsPerContact = -1
+    , speedFactor = 1
+    }
+
+
+
+-- MODEL
 
 
 type alias Positioned a =
@@ -396,41 +158,299 @@ brick x y w h =
 brickRow : Float -> List Brick
 brickRow y =
     let
-        xOff = toFloat (ceiling (-brickCols / 2)) * brickDistX
+        xOff =
+            toFloat (-modelCfg.brickCols // 2 |> toFloat |> ceiling)
+                * modelCfg.brickDistX
     in
         List.map
-            (\x -> brick (brickDistX * x + xOff) y brickWidth brickHeight)
-            [0..brickCols - 1]
+            (\x ->
+                brick (modelCfg.brickDistX * x + xOff)
+                    y
+                    modelCfg.brickWidth
+                    modelCfg.brickHeight
+            )
+            ([0..modelCfg.brickCols - 1] |> List.map toFloat)
 
 
-type alias Game =
+type alias Model =
     { state : State
     , gameBall : Ball
     , player : Player
     , bricks : List Brick
     , spareBalls : Int
     , contacts : Int
+    , leftPressed : Bool
+    , rightPressed : Bool
+    , windowDimensions : Window.Size
     }
 
 
-defaultGame : Game
-defaultGame =
+defaultModel : Model
+defaultModel =
     { state = Serve
-    , gameBall = ball 0 (paddleYPos + ballRadius) 0 0 ballRadius
-    , player = player 0 paddleYPos 0 0 paddleWidths paddleHeight
+    , gameBall =
+        ball 0
+            (modelCfg.paddleYPos + modelCfg.ballRadius)
+            0
+            0
+            modelCfg.ballRadius
+    , player =
+        player 0
+            modelCfg.paddleYPos
+            0
+            0
+            modelCfg.paddleWidths
+            modelCfg.paddleHeight
     , bricks =
-        List.map ((*) brickDistY) [0..brickRows - 1]
+        List.map ((*) modelCfg.brickDistY)
+            ([0..modelCfg.brickRows - 1] |> List.map toFloat)
             |> List.map brickRow
             |> List.concat
-    , spareBalls = startSpareBalls
+    , spareBalls = modelCfg.startSpareBalls
     , contacts = 0
+    , leftPressed = False
+    , rightPressed = False
+    , windowDimensions = { width = 640, height = 480 }
     }
 
 
 
--- /---------\
--- | updates |
--- \---------/
+-- UPDATE
+
+
+type Msg
+    = NoOp
+    | SpaceDown
+    | LeftDown
+    | LeftUp
+    | RightDown
+    | RightUp
+    | Touch Mouse.Position
+    | TouchRelease
+    | WindowSize Window.Size
+    | Tick Time.Time
+
+
+keyDownToMsg : Keyboard.KeyCode -> Msg
+keyDownToMsg kc =
+    case kc of
+        32 ->
+            SpaceDown
+
+        37 ->
+            LeftDown
+
+        39 ->
+            RightDown
+
+        _ ->
+            NoOp
+
+
+keyUpToMsg : Keyboard.KeyCode -> Msg
+keyUpToMsg kc =
+    case kc of
+        37 ->
+            LeftUp
+
+        39 ->
+            RightUp
+
+        _ ->
+            NoOp
+
+
+{-| Check if the user touched one of the four screen quadrants.
+-}
+touchInQuadrant : Int -> Window.Size -> Mouse.Position -> Maybe Bool
+touchInQuadrant q { width, height } touch =
+    let
+        ( centerX, centerY ) =
+            ( toFloat width / 2, toFloat height / 2 )
+
+        ( x, y ) =
+            ( toFloat touch.x, toFloat touch.y )
+
+        ( qExists, xCmp, yCmp ) =
+            case q of
+                1 ->
+                    ( True, (>), (<) )
+
+                2 ->
+                    ( True, (<), (<) )
+
+                3 ->
+                    ( True, (<), (>) )
+
+                4 ->
+                    ( True, (>), (>) )
+
+                _ ->
+                    ( False, (==), (==) )
+    in
+        if qExists then
+            Just (x `xCmp` centerX && y `yCmp` centerY)
+        else
+            Nothing
+
+
+maybe : b -> (a -> b) -> Maybe.Maybe a -> b
+maybe def f val =
+    Maybe.withDefault def (Maybe.map f val)
+
+
+touchUpperRight : Window.Size -> Mouse.Position -> Bool
+touchUpperRight =
+    (<<) (maybe False identity) << touchInQuadrant 1
+
+
+touchUpperLeft : Window.Size -> Mouse.Position -> Bool
+touchUpperLeft =
+    (<<) (maybe False identity) << touchInQuadrant 2
+
+
+touchLowerLeft : Window.Size -> Mouse.Position -> Bool
+touchLowerLeft =
+    (<<) (maybe False identity) << touchInQuadrant 3
+
+
+touchLowerRight : Window.Size -> Mouse.Position -> Bool
+touchLowerRight =
+    (<<) (maybe False identity) << touchInQuadrant 4
+
+
+{-| Was the upper half of the screen touched?
+-}
+touchUpper : Window.Size -> Mouse.Position -> Bool
+touchUpper winSize t =
+    touchUpperLeft winSize t || touchUpperRight winSize t
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Keyboard.downs keyDownToMsg
+        , Keyboard.ups keyUpToMsg
+        , Mouse.downs Touch
+        , Mouse.ups Touch
+        , AnimationFrame.diffs (\dt -> Tick (dt / 1000))
+        , Window.resizes WindowSize
+        ]
+
+
+update : Msg -> Model -> ( Model, Cmd msg )
+update msg model =
+    let
+        ( newModel, cmds ) =
+            case msg of
+                NoOp ->
+                    ( model, Cmd.none )
+
+                SpaceDown ->
+                    case model.state of
+                        Serve ->
+                            ( serveBall model, Cmd.none )
+
+                        Won ->
+                            ( serveBall
+                                { model
+                                    | spareBalls = defaultModel.spareBalls
+                                }
+                            , Cmd.none
+                            )
+
+                        Lost ->
+                            ( serveBall
+                                { model
+                                    | spareBalls = defaultModel.spareBalls
+                                }
+                            , Cmd.none
+                            )
+
+                        Play ->
+                            ( model, Cmd.none )
+
+                LeftDown ->
+                    ( { model | leftPressed = True }, Cmd.none )
+
+                LeftUp ->
+                    ( { model | leftPressed = False }, Cmd.none )
+
+                RightDown ->
+                    ( { model | rightPressed = True }, Cmd.none )
+
+                RightUp ->
+                    ( { model | rightPressed = False }, Cmd.none )
+
+                WindowSize newSize ->
+                    ( { model | windowDimensions = newSize }, Cmd.none )
+
+                Touch pos ->
+                    if touchUpper model.windowDimensions pos then
+                        update SpaceDown model
+                    else if touchLowerLeft model.windowDimensions pos then
+                        update LeftDown model
+                    else if touchLowerRight model.windowDimensions pos then
+                        update RightDown model
+                    else
+                        ( model, Cmd.none )
+
+                TouchRelease ->
+                    ( model, Cmd.none ) :> update LeftUp :> update RightUp
+
+                Tick dt ->
+                    let
+                        paddleDirection =
+                            case ( model.leftPressed, model.rightPressed ) of
+                                ( True, True ) ->
+                                    0
+
+                                ( False, True ) ->
+                                    1
+
+                                ( True, False ) ->
+                                    -1
+
+                                ( False, False ) ->
+                                    0
+
+                        model' =
+                            { model
+                                | player =
+                                    stepPlayer dt
+                                        paddleDirection
+                                        model.player
+                            }
+                    in
+                        case model.state of
+                            Play ->
+                                ( stepPlay dt model', Cmd.none )
+
+                            Won ->
+                                ( model', Cmd.none )
+
+                            Lost ->
+                                ( model', Cmd.none )
+
+                            Serve ->
+                                ( moveBallWithPaddle model', Cmd.none )
+    in
+        ( newModel, cmds )
+
+
+moveBallWithPaddle : Model -> Model
+moveBallWithPaddle ({ gameBall, player } as game) =
+    let
+        newBall =
+            ball player.x
+                (player.y + player.h / 2 + gameBall.r + 1)
+                (modelCfg.traction * player.vx)
+                modelCfg.serveSpeed
+                gameBall.r
+    in
+        { game
+            | gameBall = newBall
+        }
 
 
 {-| Move an object according to its speed for a given time step t.
@@ -447,7 +467,7 @@ near k c n =
     n >= k - c && n <= k + c
 
 
-{-| I the ball overlapping the box?
+{-| Is the ball overlapping the box?
 -}
 within : Ball -> Sized (Positioned a) -> Bool
 within ball box =
@@ -472,8 +492,8 @@ stepV v lowerCollision upperCollision =
 speedUp : Moving a -> Moving a
 speedUp ({ vx, vy } as obj) =
     { obj
-        | vx = speedIncX * vx
-        , vy = speedIncY * vy
+        | vx = modelCfg.speedIncX * vx
+        , vy = modelCfg.speedIncY * vy
     }
 
 
@@ -482,7 +502,8 @@ speedUp ({ vx, vy } as obj) =
 weightedAvg : List Float -> List Float -> Float
 weightedAvg values weights =
     let
-        weightedVals = List.map2 (*) values weights
+        weightedVals =
+            List.map2 (*) values weights
     in
         List.sum weightedVals / List.sum weights
 
@@ -492,7 +513,8 @@ weightedAvg values weights =
 goBrickHits : Brick -> ( Ball, List Brick ) -> ( Ball, List Brick )
 goBrickHits brick ( ball, bricks ) =
     let
-        hit = ball `within` brick
+        hit =
+            ball `within` brick
 
         bricks' =
             if hit then
@@ -514,10 +536,17 @@ during a given timestep.
 Returns the new ball properties, the bricks left and perhaps increased
 count of paddle ball contact.
 -}
-stepBall : Time.Time -> Ball -> Player -> List Brick -> Int -> ( ( Ball, List Brick ), Int )
+stepBall :
+    Time.Time
+    -> Ball
+    -> Player
+    -> List Brick
+    -> Int
+    -> ( ( Ball, List Brick ), Int )
 stepBall t ({ x, y, vx, vy } as ball) p bricks contacts =
     let
-        hitPlayer = (ball `within` p)
+        hitPlayer =
+            (ball `within` p)
 
         contacts' =
             if hitPlayer then
@@ -527,15 +556,18 @@ stepBall t ({ x, y, vx, vy } as ball) p bricks contacts =
 
         newVx =
             if hitPlayer then
-                weightedAvg [ p.vx, vx ] [ traction, 1 - traction ]
+                weightedAvg [ p.vx, vx ]
+                    [ modelCfg.traction, 1 - modelCfg.traction ]
             else
-                stepV vx (x < (ball.r - halfWidth)) (x > halfWidth - ball.r)
+                stepV vx
+                    (x < (ball.r - modelCfg.halfWidth))
+                    (x > modelCfg.halfWidth - ball.r)
 
-        hitCeiling = (y > halfHeight - ball.r)
+        hitCeiling =
+            (y > modelCfg.halfHeight - ball.r)
 
         ball' =
-            stepObj
-                t
+            stepObj t
                 { ball
                     | vx = newVx
                     , vy = stepV vy hitPlayer hitCeiling
@@ -549,36 +581,34 @@ stepBall t ({ x, y, vx, vy } as ball) p bricks contacts =
 stepPlayer : Time.Time -> Int -> Player -> Player
 stepPlayer t dir p =
     let
-        p1 = stepObj t { p | vx = p.vx * brake + toFloat dir * paddleSpeed }
+        p1 =
+            stepObj t
+                { p
+                    | vx =
+                        p.vx
+                            * modelCfg.brake
+                            + toFloat dir
+                            * modelCfg.paddleSpeed
+                }
     in
-        { p1 | x = clamp (p.w / 2 - halfWidth) (halfWidth - p.w / 2) p1.x }
-
-
-{-| Update player position and
-dispatch according to the current game state.
--}
-stepGame : Input -> Game -> Game
-stepGame ({ dir, delta } as input) ({ state, player } as game) =
-    let
-        func =
-            if state == Play then
-                stepPlay
-            else if state == Serve then
-                stepServe
-            else
-                stepGameOver
-    in
-        func input { game | player = stepPlayer delta dir player }
+        { p1
+            | x =
+                clamp (p.w / 2 - modelCfg.halfWidth)
+                    (modelCfg.halfWidth - p.w / 2)
+                    p1.x
+        }
 
 
 {-| Step game when the ball is bouncing around.
 -}
-stepPlay : Input -> Game -> Game
-stepPlay { delta } ({ gameBall, player, bricks, spareBalls, contacts } as game) =
+stepPlay : Time.Time -> Model -> Model
+stepPlay delta ({ gameBall, player, bricks, spareBalls, contacts } as model) =
     let
-        ballLost = gameBall.y - gameBall.r < -halfHeight
+        ballLost =
+            gameBall.y - gameBall.r < -modelCfg.halfHeight
 
-        gameOver = ballLost && spareBalls == 0
+        gameOver =
+            ballLost && spareBalls == 0
 
         spareBalls' =
             if ballLost then
@@ -599,12 +629,12 @@ stepPlay { delta } ({ gameBall, player, bricks, spareBalls, contacts } as game) 
         ( ( ball', bricks' ), contacts' ) =
             stepBall delta gameBall player bricks contacts
     in
-        { game
+        { model
             | state = state'
             , gameBall = ball'
             , bricks = bricks'
             , spareBalls =
-                max 0 spareBalls'
+                Basics.max 0 spareBalls'
                 -- No -1 when game is lost.
             , contacts = contacts'
         }
@@ -612,48 +642,59 @@ stepPlay { delta } ({ gameBall, player, bricks, spareBalls, contacts } as game) 
 
 {-| Step game when the player needs to serve the ball.
 -}
-stepServe : Input -> Game -> Game
-stepServe { space } ({ player, gameBall } as game) =
+serveBall : Model -> Model
+serveBall ({ player, gameBall } as model) =
+    { model
+        | state = Play
+    }
+        |> moveBallWithPaddle
+
+
+
+-- /--------------------\
+-- | view configuration |
+-- \--------------------/
+
+
+viewCfg =
+    { manualMsg =
+        "SPACE to serve, &larr; and &rarr; to move;"
+            ++ " or just touch the quadrants"
+    , wonMsg = "Congratulations! Serve to restart."
+    , lostMsg = "Serve to restart. ;)"
+    , brickColorFactor = 0.01
+    , endTextHeight = 24
+    , msgTextPosY = 20 - modelCfg.halfHeight
+    , pointsTextPos = ( 64 - modelCfg.halfWidth, modelCfg.halfHeight - 10 )
+    , spareBallsTxtPos = ( modelCfg.halfWidth - 69, modelCfg.halfHeight - 10 )
+    , breakoutBlue = rgb 60 60 100
+    , textBlue = rgb 160 160 200
+    , quadrantCol = rgba 0 0 0 0.4
+    }
+
+
+
+-- VIEW
+
+
+view : Model -> Html Msg
+view model =
+    layers [ displayBricks model, displayForeground model ]
+        |> Element.toHtml
+
+
+displayFullScreen : Window.Size -> Form -> Element
+displayFullScreen { width, height } content =
     let
-        newBall =
-            ball
-                player.x
-                (player.y + player.h / 2 + gameBall.r + 1)
-                (traction * player.vx)
-                serveSpeed
-                gameBall.r
+        -- to prevent scrolling down when user hits space bar
+        height' =
+            height - 20
 
-        state' =
-            if space then
-                Play
-            else
-                Serve
+        gameScale =
+            Basics.min (toFloat width / modelCfg.gameWidth)
+                (toFloat height' / modelCfg.gameHeight)
     in
-        { game
-            | state = state'
-            , gameBall = newBall
-        }
-
-
-{-| Change nothing except the user wants to play again.
--}
-stepGameOver : Input -> Game -> Game
-stepGameOver { space } ({ state } as game) =
-    if space then
-        defaultGame
-    else
-        game
-
-
-gameState : Signal.Signal Game
-gameState =
-    Signal.foldp stepGame defaultGame input
-
-
-
--- /---------\
--- | display |
--- \---------/
+        collage width height' [ content |> scale gameScale ]
 
 
 {-| Render text using a given transformation function.
@@ -661,7 +702,7 @@ gameState =
 txt : (Text.Text -> Text.Text) -> String -> Element
 txt f =
     Text.fromString
-        >> Text.color textBlue
+        >> Text.color viewCfg.textBlue
         >> Text.monospace
         >> f
         >> leftAligned
@@ -680,7 +721,7 @@ make color obj shape =
 -}
 brickColor : Brick -> Color
 brickColor b =
-    hsl (brickColorFactor * (b.x + b.y)) 1 0.5
+    hsl (viewCfg.brickColorFactor * (b.x + b.y)) 1 0.5
 
 
 {-| Dummy for cases in which an game object or text should be invisible.
@@ -697,8 +738,10 @@ displayQuadrants ( w, h ) state =
     let
         grid =
             group
-                [ path [ ( 0, 0 ), ( 0, -h / 2 ) ] |> traced (solid quadrantCol)
-                , path [ ( -w / 2, 0 ), ( w / 2, 0 ) ] |> traced (solid quadrantCol)
+                [ path [ ( 0, 0 ), ( 0, -h / 2 ) ]
+                    |> traced (solid viewCfg.quadrantCol)
+                , path [ ( -w / 2, 0 ), ( w / 2, 0 ) ]
+                    |> traced (solid viewCfg.quadrantCol)
                 ]
     in
         if state == Serve then
@@ -713,18 +756,21 @@ and how many can he achieve maximally in a game?
 calcPoints : Int -> Int -> Int -> ( Int, Int )
 calcPoints bricksLeft spareBalls contacts =
     let
-        maxBricks = brickRows * brickCols
+        maxBricks =
+            modelCfg.brickRows * modelCfg.brickCols
 
-        maxPoints = pointsPerBrick * maxBricks
+        maxPoints =
+            modelCfg.pointsPerBrick * maxBricks
 
-        bricksGone = maxBricks - bricksLeft
+        bricksGone =
+            maxBricks - bricksLeft
 
         points =
-            pointsPerBrick
+            modelCfg.pointsPerBrick
                 * bricksGone
-                + pointsPerBall
-                * (startSpareBalls - spareBalls)
-                + pointsPerContact
+                + modelCfg.pointsPerBall
+                * (modelCfg.startSpareBalls - spareBalls)
+                + modelCfg.pointsPerContact
                 * contacts
     in
         ( points, maxPoints )
@@ -735,66 +781,71 @@ calcPoints bricksLeft spareBalls contacts =
 pointsText : Int -> Int -> Int -> String
 pointsText bricksLeft spareBalls contacts =
     let
-        ( points, maxPoints ) = calcPoints bricksLeft spareBalls contacts
+        ( points, maxPoints ) =
+            calcPoints bricksLeft spareBalls contacts
 
-        maxPointsStrLen = String.length <| toString maxPoints
+        maxPointsStrLen =
+            String.length <| toString maxPoints
     in
         "points: " ++ (String.padLeft maxPointsStrLen ' ' <| toString points)
 
 
-{-| Draw background into a fullscreen-sized Element.
--}
-displayBricks : ( Int, Int ) -> List Brick -> Element
-displayBricks ( w, h ) bricks =
+displayBricks : Model -> Element
+displayBricks ({ bricks } as model) =
     let
-        background = rect gameWidth gameHeight |> filled breakoutBlue
+        background =
+            rect modelCfg.gameWidth modelCfg.gameHeight
+                |> filled viewCfg.breakoutBlue
 
         brickRects =
             group
-                <| List.map
-                    (\b -> rect b.w b.h |> make (brickColor b) b)
+                <| List.map (\b -> rect b.w b.h |> make (brickColor b) b)
                     bricks
-
-        gameScale = min (toFloat w / gameWidth) (toFloat h / gameHeight)
     in
-        displayFullScreen ( w, h ) (group [ background, brickRects ])
+        displayFullScreen model.windowDimensions
+            (group [ background, brickRects ])
 
 
-{-| Draw foreground into a fullscreen-sized Element.
--}
-displayForeground : ( Int, Int ) -> Game -> Element
-displayForeground ( w, h ) { state, gameBall, player, bricks, spareBalls, contacts } =
+displayForeground : Model -> Element
+displayForeground ({ state, gameBall, player, spareBalls } as model) =
     let
-        pointsMsg = pointsText (List.length bricks) spareBalls contacts
+        pointsMsg =
+            pointsText (List.length model.bricks) spareBalls model.contacts
 
-        spareBallsMsg = "spare balls: " ++ toString spareBalls
+        spareBallsMsg =
+            "spare balls: " ++ toString spareBalls
 
-        ball = circle gameBall.r |> make lightGray gameBall
+        ball =
+            circle gameBall.r |> make lightGray gameBall
 
-        paddle = rect player.w player.h |> make darkGray player
+        paddle =
+            rect player.w player.h |> make darkGray player
 
         serveTextForm =
             if state == Serve then
-                txt identity manualMsg
+                txt identity viewCfg.manualMsg
                     |> toForm
-                    |> move ( 0, msgTextPosY )
+                    |> move ( 0, viewCfg.msgTextPosY )
             else
                 noForm
 
         endMsg =
             case state of
                 Won ->
-                    wonMsg
+                    viewCfg.wonMsg
 
                 Lost ->
-                    lostMsg
+                    viewCfg.lostMsg
 
                 _ ->
                     ""
 
-        showEndText = state == Won || state == Lost
+        showEndText =
+            state == Won || state == Lost
 
-        endText = txt (Text.height endTextHeight) (pointsMsg ++ "\n" ++ endMsg)
+        endText =
+            txt (Text.height viewCfg.endTextHeight)
+                (pointsMsg ++ "\n" ++ endMsg)
 
         endTextForm =
             if showEndText then
@@ -802,16 +853,18 @@ displayForeground ( w, h ) { state, gameBall, player, bricks, spareBalls, contac
             else
                 noForm
 
-        quadrants = displayQuadrants ( gameWidth, gameHeight ) state
+        quadrants =
+            displayQuadrants ( modelCfg.gameWidth, modelCfg.gameHeight ) state
 
-        pointsTextForm = txt identity pointsMsg |> toForm |> move pointsTextPos
+        pointsTextForm =
+            txt identity pointsMsg |> toForm |> move viewCfg.pointsTextPos
 
         spareBallsForm =
             txt identity spareBallsMsg
                 |> toForm
-                |> move spareBallsTextPos
+                |> move viewCfg.spareBallsTxtPos
     in
-        displayFullScreen ( w, h )
+        displayFullScreen model.windowDimensions
             <| group
                 [ paddle
                 , ball
@@ -821,47 +874,3 @@ displayForeground ( w, h ) { state, gameBall, player, bricks, spareBalls, contac
                 , endTextForm
                 , quadrants
                 ]
-
-
-{-| Draw a Form maximized into the window.
--}
-displayFullScreen : ( Int, Int ) -> Form -> Element
-displayFullScreen ( w, h ) content =
-    let
-        gameScale = min (toFloat w / gameWidth) (toFloat h / gameHeight)
-    in
-        collage w h [ content |> scale gameScale ]
-
-
-{-| Change in brick configuration.
--}
-bricksSignal : Signal.Signal (List Brick)
-bricksSignal =
-    (Signal.map .bricks gameState) |> Signal.dropRepeats
-
-
-{-| The changing background Element.
--}
-background : Signal.Signal Element
-background =
-    Signal.map2 displayBricks Window.dimensions bricksSignal
-
-
-{-| The changing foreground Element.
--}
-foreground : Signal.Signal Element
-foreground =
-    Signal.map2 displayForeground Window.dimensions gameState
-
-
-{-| Display the game.
-Background and foreground are splitted, so the background
-is only redrawn when really needed, i.e. bricks change.
--}
-display : Element -> Element -> Element
-display background foreground =
-    layers [ background, foreground ]
-
-
-main =
-    Signal.map2 display background foreground
