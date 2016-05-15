@@ -36,11 +36,16 @@ import AnimationFrame
 
 main =
     program
-        { init = ( defaultModel, getWindowSizeCommand )
+        { init = initModelAndCommands
         , update = update
         , subscriptions = subscriptions
         , view = view
         }
+
+
+initModelAndCommands : ( Model, Cmd Msg )
+initModelAndCommands =
+    ( defaultModel, getWindowSizeCommand )
 
 
 getWindowSizeCommand : Cmd Msg
@@ -260,7 +265,7 @@ subscriptions model =
         ]
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
         ( newModel, cmds ) =
@@ -274,15 +279,10 @@ update msg model =
                             ( serveBall model, Cmd.none )
 
                         Won ->
-                            ( defaultModel, Cmd.none )
+                            initModelAndCommands
 
                         Lost ->
-                            ( serveBall
-                                { model
-                                    | spareBalls = defaultModel.spareBalls
-                                }
-                            , Cmd.none
-                            )
+                            initModelAndCommands
 
                         Play ->
                             ( model, Cmd.none )
@@ -561,8 +561,8 @@ serveBall ({ player, gameBall } as model) =
 viewCfg =
     { manualMsg =
         "SPACE to serve, &larr; and &rarr; to move"
-    , wonMsg = "Congratulations! Serve to restart."
-    , lostMsg = "Serve to restart. ;)"
+    , wonMsg = "Congratulations! SPACE to restart."
+    , lostMsg = "SPACE to restart. ;)"
     , brickColorFactor = 0.01
     , endTextHeight = 24
     , msgTextPosY = 20 - modelCfg.halfHeight
