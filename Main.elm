@@ -1,7 +1,6 @@
 module Main exposing (..)
 
 import Html exposing (Html, Attribute, div, text, input)
-import Html.App exposing (program)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onCheck)
 import Color exposing (Color, rgb, rgba, hsl, lightGray, darkGray)
@@ -22,7 +21,7 @@ import Collage
         , scale
         , path
         )
-import Json.Decode as D exposing ((:=))
+import Json.Decode as D exposing (field)
 import Keyboard
 import List exposing ((::))
 import List
@@ -37,7 +36,7 @@ import Update.Extra.Infix exposing ((:>))
 
 
 main =
-    program
+    Html.program
         { init = initModelAndCommands
         , update = update
         , subscriptions = subscriptions
@@ -52,7 +51,7 @@ initModelAndCommands =
 
 getWindowSizeCommand : Cmd Msg
 getWindowSizeCommand =
-    Task.perform (always NoOp) WindowSize Window.size
+    Task.perform WindowSize Window.size
 
 
 
@@ -168,7 +167,7 @@ brickRow y =
                     modelCfg.brickWidth
                     modelCfg.brickHeight
             )
-            ([0..modelCfg.brickCols - 1] |> List.map toFloat)
+            ((List.range 0 (modelCfg.brickCols - 1)) |> List.map toFloat)
 
 
 type alias Model =
@@ -202,7 +201,7 @@ defaultModel =
             modelCfg.paddleHeight
     , bricks =
         List.map ((*) modelCfg.brickDistY)
-            ([0..modelCfg.brickRows - 1] |> List.map toFloat)
+            ((List.range 0 (modelCfg.brickRows - 1)) |> List.map toFloat)
             |> List.map brickRow
             |> List.concat
     , spareBalls = modelCfg.startSpareBalls
@@ -294,7 +293,7 @@ touchInQuadrant q { width, height } touch =
                     ( False, (==), (==) )
     in
         if qExists then
-            Just (x `xCmp` centerX && y `yCmp` centerY)
+            Just (xCmp x centerX && yCmp y centerY)
         else
             Nothing
 
@@ -411,7 +410,7 @@ update msg model =
                                 ( False, False ) ->
                                     0
 
-                        model' =
+                        model_ =
                             { model
                                 | player =
                                     stepPlayer dt
@@ -421,16 +420,16 @@ update msg model =
                     in
                         case model.state of
                             Play ->
-                                ( stepPlay dt model', Cmd.none )
+                                ( stepPlay dt model_, Cmd.none )
 
                             Won ->
-                                ( model', Cmd.none )
+                                ( model_, Cmd.none )
 
                             Lost ->
-                                ( model', Cmd.none )
+                                ( model_, Cmd.none )
 
                             Serve ->
-                                ( moveBallWithPaddle model', Cmd.none )
+                                ( moveBallWithPaddle model_, Cmd.none )
     in
         ( newModel, cmds )
 
@@ -459,7 +458,7 @@ stepObj t ({ x, y, vx, vy } as obj) =
 
 {-| Is the distance between n and k less or equal c?
 -}
-near : number -> number -> number -> Bool
+near : Float -> Float -> Float -> Bool
 near k c n =
     n >= k - c && n <= k + c
 
@@ -511,21 +510,21 @@ goBrickHits : Brick -> ( Ball, List Brick ) -> ( Ball, List Brick )
 goBrickHits brick ( ball, bricks ) =
     let
         hit =
-            ball `within` brick
+            within ball brick
 
-        bricks' =
+        bricks_ =
             if hit then
                 bricks
             else
                 brick :: bricks
 
-        ball' =
+        ball_ =
             if hit then
                 speedUp { ball | vy = -ball.vy }
             else
                 ball
     in
-        ( ball', bricks' )
+        ( ball_, bricks_ )
 
 
 {-| Collision handling of the ball with the paddle and the bricks
@@ -543,9 +542,9 @@ stepBall :
 stepBall t ({ x, y, vx, vy } as ball) p bricks contacts =
     let
         hitPlayer =
-            (ball `within` p)
+            (within ball p)
 
-        contacts' =
+        contacts_ =
             if hitPlayer then
                 contacts + 1
             else
@@ -563,14 +562,14 @@ stepBall t ({ x, y, vx, vy } as ball) p bricks contacts =
         hitCeiling =
             (y > modelCfg.halfHeight - ball.r)
 
-        ball' =
+        ball_ =
             stepObj t
                 { ball
                     | vx = newVx
                     , vy = stepV vy hitPlayer hitCeiling
                 }
     in
-        ( List.foldr goBrickHits ( ball', [] ) bricks, contacts' )
+        ( List.foldr goBrickHits ( ball_, [] ) bricks, contacts_ )
 
 
 {-| Calculate how the players properties have changed.
@@ -607,13 +606,13 @@ stepPlay delta ({ gameBall, player, bricks, spareBalls, contacts } as model) =
         gameOver =
             ballLost && spareBalls == 0
 
-        spareBalls' =
+        spareBalls_ =
             if ballLost then
                 spareBalls - 1
             else
                 spareBalls
 
-        state' =
+        state_ =
             if gameOver then
                 Lost
             else if ballLost then
@@ -623,17 +622,17 @@ stepPlay delta ({ gameBall, player, bricks, spareBalls, contacts } as model) =
             else
                 Play
 
-        ( ( ball', bricks' ), contacts' ) =
+        ( ( ball_, bricks_ ), contacts_ ) =
             stepBall delta gameBall player bricks contacts
     in
         { model
-            | state = state'
-            , gameBall = ball'
-            , bricks = bricks'
+            | state = state_
+            , gameBall = ball_
+            , bricks = bricks_
             , spareBalls =
-                Basics.max 0 spareBalls'
+                Basics.max 0 spareBalls_
                 -- No -1 when game is lost.
-            , contacts = contacts'
+            , contacts = contacts_
         }
 
 
@@ -671,8 +670,8 @@ viewCfg =
 touchDecoder : D.Decoder Msg
 touchDecoder =
     D.oneOf
-        [ D.at [ "touches", "0" ] (D.object2 TouchStart ("pageX" := D.float) ("pageY" := D.float))
-        , D.object2 TouchStart ("pageX" := D.float) ("pageY" := D.float)
+        [ D.at [ "touches", "0" ] (D.map2 TouchStart (field "pageX" D.float) (field "pageY" D.float))
+        , D.map2 TouchStart (field "pageX" D.float) (field "pageY" D.float)
         ]
 
 
@@ -693,14 +692,14 @@ displayFullScreen : Window.Size -> Form -> Element
 displayFullScreen { width, height } content =
     let
         -- to prevent scrolling down when user hits space bar
-        height' =
+        height_ =
             height - 20
 
         gameScale =
             Basics.min (toFloat width / modelCfg.gameWidth)
-                (toFloat height' / modelCfg.gameHeight)
+                (toFloat height_ / modelCfg.gameHeight)
     in
-        collage width height' [ content |> scale gameScale ]
+        collage width height_ [ content |> scale gameScale ]
 
 
 {-| Render text using a given transformation function.
